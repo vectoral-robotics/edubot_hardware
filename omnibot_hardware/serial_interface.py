@@ -21,7 +21,7 @@ class SerialBridge:
 
     Expected protocol:
         - TX (to Arduino): "M w_fl w_rl w_rr w_fr\n"
-        - RX (from Arduino): "E seq t_fl t_rl t_rr t_fr\n"
+        - RX (from Arduino): "E seq timestamp_us t_fl t_rl t_rr t_fr\n"
     """
 
     def __init__(self, port: str = "/dev/ttyUSB0", baud: int = 115200, timeout: float = 0.0):
@@ -37,10 +37,10 @@ class SerialBridge:
         self._rxbuf = bytearray()
         self._lock = threading.Lock()
 
-        # open connection
+        # Open connection
         try:
             self.ser = serial.Serial(port, baud, timeout=timeout)
-            time.sleep(2.0)  # give Arduino time to reset
+            time.sleep(2.0)  # Allow Arduino reset on connect
             print(f"Connected to Arduino on {port} @ {baud} baud")
         except serial.SerialException as e:
             print(f"Serial connection failed: {e}")
@@ -101,26 +101,30 @@ class SerialBridge:
         return lines
 
     # ------------------------------------------------------------------
-    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int]]:
+    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int, int]]:
         """
         Parse an encoder feedback line of the form:
-            "E seq t_fl t_rl t_rr t_fr"
+            "E seq timestamp_us t_fl t_rl t_rr t_fr"
 
         Returns:
-            (seq, t_fl, t_rl, t_rr, t_fr) or None if invalid.
+            (seq, timestamp_us, t_fl, t_rl, t_rr, t_fr)
+            or None if invalid.
         """
         if not line.startswith("E"):
             return None
+
         parts = line.split()
-        if len(parts) != 6:
+        if len(parts) != 7:
             return None
+
         try:
             seq = int(parts[1])
-            t_fl = int(parts[2])
-            t_rl = int(parts[3])
-            t_rr = int(parts[4])
-            t_fr = int(parts[5])
-            return seq, t_fl, t_rl, t_rr, t_fr
+            ts_us = int(parts[2])
+            t_fl = int(parts[3])
+            t_rl = int(parts[4])
+            t_rr = int(parts[5])
+            t_fr = int(parts[6])
+            return seq, ts_us, t_fl, t_rl, t_rr, t_fr
         except ValueError:
             return None
 

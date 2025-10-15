@@ -36,10 +36,11 @@ class HardwareNode(Node):
         self.declare_parameter('base_length', 0.095)
         self.declare_parameter('base_width', 0.1025)
         self.declare_parameter('ticks_per_rev', 4320.0)
-        self.declare_parameter('encoder_dt', 0.02)
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('mecanum_layout', 'X')
         self.declare_parameter('log_commands', False)
+        self.declare_parameter('odom_hz', 50.0)
+        self.declare_parameter('tf_hz', 50.0)
 
         use_sim = bool(self.get_parameter('use_sim').value)
         port = self.get_parameter('port').value
@@ -48,15 +49,16 @@ class HardwareNode(Node):
         Lx = float(self.get_parameter('base_length').value)
         Ly = float(self.get_parameter('base_width').value)
         ticks_per_rev = float(self.get_parameter('ticks_per_rev').value)
-        encoder_dt = float(self.get_parameter('encoder_dt').value)
         layout = self.get_parameter('mecanum_layout').value.upper()
+        self._odom_hz = float(self.get_parameter('odom_hz').value)
+        self._tf_hz = float(self.get_parameter('tf_hz').value)
 
         # ------------------------------------------------------------------
         # Backend selection (real ↔ simulation)
         # ------------------------------------------------------------------
         if use_sim:
             from .simulation_interface import SimulationInterface
-            self.backend = SimulationInterface(ticks_per_rev, encoder_dt, R)
+            self.backend = SimulationInterface(ticks_per_rev, R)
             self.get_logger().info("Running in SIMULATION mode.")
         else:
             from .serial_interface import SerialBridge
@@ -67,7 +69,7 @@ class HardwareNode(Node):
         # Submodules
         # ------------------------------------------------------------------
         self.kin = MecanumKinematics(R, Lx, Ly, layout)
-        self.odom = OdometryEstimator(R, Lx, Ly, ticks_per_rev, encoder_dt, layout)
+        self.odom = OdometryEstimator(R, Lx, Ly, ticks_per_rev, layout)
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # ------------------------------------------------------------------
@@ -81,9 +83,10 @@ class HardwareNode(Node):
         self._last_cmd = Twist()
         self._last_cmd_time = self.get_clock().now()
         self._cmd_timeout = float(self.get_parameter('cmd_timeout').value)
+        self._last_encoder_ts = None  # for dt computation
 
         # Timers
-        self._update_hz = 50.0
+        self._update_hz = max(self._odom_hz, 50.0)
         self.create_timer(1.0 / self._update_hz, self._update_loop)
 
         self.get_logger().info("HardwareNode initialized successfully.")
@@ -121,8 +124,27 @@ class HardwareNode(Node):
             enc = self.backend.parse_encoder_line(line)
             if not enc:
                 continue
-            seq, t_fl, t_rl, t_rr, t_fr = enc
-            vel = self.odom.update((t_fl, t_rl, t_rr, t_fr))
+
+            # Expected format: seq, ts_us, t_fl, t_rl, t_rr, t_fr
+            if len(enc) == 6:
+                seq, ts_us, t_fl, t_rl, t_rr, t_fr = enc
+            else:
+                # fallback for old format (no timestamp)
+                seq, t_fl, t_rl, t_rr, t_fr = enc
+                ts_us = None
+
+            # --- Compute dynamic dt ---
+            dt = None
+            if ts_us is not None:
+                if self._last_encoder_ts is not None:
+                    dt = (ts_us - self._last_encoder_ts) / 1e6  # µs → s
+                self._last_encoder_ts = ts_us
+
+            # skip update if dt invalid or not yet available
+            if dt is None or dt <= 0.0 or dt > 0.2:
+                continue
+
+            vel = self.odom.update((t_fl, t_rl, t_rr, t_fr), dt)
             if vel:
                 vx, vy, wz = vel
                 self._publish_odometry(vx, vy, wz)
@@ -162,8 +184,8 @@ class HardwareNode(Node):
         js = JointState()
         js.header.stamp = stamp
         js.name = ['wheel_fl_joint', 'wheel_fr_joint', 'wheel_rl_joint', 'wheel_rr_joint']
-        js.position = self.odom.get_wheel_angles()  # wheel angles
-        js.velocity = [0.0, 0.0, 0.0, 0.0]          # optional placeholder for wheel speeds
+        js.position = self.odom.get_wheel_angles()
+        js.velocity = [0.0, 0.0, 0.0, 0.0]
         self.joint_pub.publish(js)
 
     # ------------------------------------------------------------------

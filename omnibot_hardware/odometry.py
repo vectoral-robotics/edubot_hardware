@@ -27,7 +27,6 @@ class OdometryEstimator:
                  base_length: float,
                  base_width: float,
                  ticks_per_rev: float,
-                 encoder_dt: float,
                  mecanum_layout: str = "X"):
         """
         Args:
@@ -35,7 +34,6 @@ class OdometryEstimator:
             base_length: half of robot length [m]
             base_width: half of robot width [m]
             ticks_per_rev: encoder ticks per revolution
-            encoder_dt: time interval between encoder updates [s]
             mecanum_layout: 'X' or 'O'
         """
         self.R = wheel_radius
@@ -43,7 +41,6 @@ class OdometryEstimator:
         self.Ly = base_width
         self.L = self.Lx + self.Ly
         self.ticks_per_rev = ticks_per_rev
-        self.dt = encoder_dt
         self.s = 1.0 if mecanum_layout.upper() == "X" else -1.0
 
         # Pose state
@@ -58,12 +55,15 @@ class OdometryEstimator:
         self._wheel_angles = [0.0, 0.0, 0.0, 0.0]
 
     # ------------------------------------------------------------------
-    def update(self, ticks: Tuple[int, int, int, int]) -> Optional[Tuple[float, float, float]]:
+    def update(self,
+               ticks: Tuple[int, int, int, int],
+               dt: float) -> Optional[Tuple[float, float, float]]:
         """
         Update odometry from new encoder tick readings.
 
         Args:
             ticks: tuple (t_fl, t_rl, t_rr, t_fr)
+            dt: time delta since last encoder update [s]
 
         Returns:
             (vx, vy, wz): body-frame velocities [m/s, m/s, rad/s]
@@ -71,6 +71,9 @@ class OdometryEstimator:
         """
         if self._last_ticks is None:
             self._last_ticks = ticks
+            return None
+
+        if dt <= 0.0:
             return None
 
         t_fl, t_rl, t_rr, t_fr = ticks
@@ -88,13 +91,13 @@ class OdometryEstimator:
         d_fr *= -1
 
         # Convert ticks → wheel angular velocity [rad/s]
-        two_pi_over_dt = (2.0 * math.pi) / self.dt
-        w_fl = (d_fl / self.ticks_per_rev) * two_pi_over_dt
-        w_rl = (d_rl / self.ticks_per_rev) * two_pi_over_dt
-        w_rr = (d_rr / self.ticks_per_rev) * two_pi_over_dt
-        w_fr = (d_fr / self.ticks_per_rev) * two_pi_over_dt
+        two_pi = 2.0 * math.pi
+        w_fl = (d_fl / self.ticks_per_rev) * two_pi / dt
+        w_rl = (d_rl / self.ticks_per_rev) * two_pi / dt
+        w_rr = (d_rr / self.ticks_per_rev) * two_pi / dt
+        w_fr = (d_fr / self.ticks_per_rev) * two_pi / dt
 
-        # Forward kinematics
+        # Forward kinematics (body-frame)
         vx = (self.R / 4.0) * (w_fl + w_fr + w_rl + w_rr)
         vy = (self.R / 4.0) * (-self.s * w_fl + self.s * w_fr + self.s * w_rl - self.s * w_rr)
         wz = (self.R / (4.0 * self.L)) * (-w_fl + w_fr - w_rl + w_rr)
@@ -102,15 +105,18 @@ class OdometryEstimator:
         # Integrate pose in world frame
         cos_y = math.cos(self.yaw)
         sin_y = math.sin(self.yaw)
-        self.x += vx * self.dt * cos_y - vy * self.dt * sin_y
-        self.y += vx * self.dt * sin_y + vy * self.dt * cos_y
-        self.yaw += wz * self.dt
+        self.x += vx * dt * cos_y - vy * dt * sin_y
+        self.y += vx * dt * sin_y + vy * dt * cos_y
+        self.yaw += wz * dt
+
+        # Normalize yaw to [-pi, pi]
+        self.yaw = (self.yaw + math.pi) % (2.0 * math.pi) - math.pi
 
         # Integrate wheel angles for JointState
-        self._wheel_angles[0] += (d_fl / self.ticks_per_rev) * 2.0 * math.pi
-        self._wheel_angles[1] += (d_rl / self.ticks_per_rev) * 2.0 * math.pi
-        self._wheel_angles[2] += (d_rr / self.ticks_per_rev) * 2.0 * math.pi
-        self._wheel_angles[3] += (d_fr / self.ticks_per_rev) * 2.0 * math.pi
+        self._wheel_angles[0] += (d_fl / self.ticks_per_rev) * two_pi
+        self._wheel_angles[1] += (d_rl / self.ticks_per_rev) * two_pi
+        self._wheel_angles[2] += (d_rr / self.ticks_per_rev) * two_pi
+        self._wheel_angles[3] += (d_fr / self.ticks_per_rev) * two_pi
 
         return vx, vy, wz
 

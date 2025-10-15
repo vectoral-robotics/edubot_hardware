@@ -16,21 +16,18 @@ from typing import List, Tuple, Optional
 class SimulationInterface:
     """
     Drop-in replacement for SerialBridge that simulates motor control and encoder feedback.
-    Emits lines of the form: "E seq t_fl t_rl t_rr t_fr"
+    Emits lines of the form: "E seq timestamp_us t_fl t_rl t_rr t_fr"
     """
 
     def __init__(self,
                  ticks_per_rev: int = 4320,
-                 encoder_dt: float = 0.02,
                  wheel_radius: float = 0.04):
         """
         Args:
             ticks_per_rev: simulated encoder resolution [ticks/rev]
-            encoder_dt: simulated update period [s]
             wheel_radius: wheel radius [m] (not strictly needed here)
         """
         self.ticks_per_rev = float(ticks_per_rev)
-        self.encoder_dt = float(encoder_dt)
         self.wheel_radius = float(wheel_radius)
 
         # current simulated wheel speeds [rad/s]
@@ -70,16 +67,20 @@ class SimulationInterface:
     # ------------------------------------------------------------------
     def read_lines(self) -> List[str]:
         """
-        Simulate encoder feedback lines at ~encoder_dt.
+        Simulate encoder feedback lines with timestamps.
+
         Returns:
-            a list with zero or one line: "E seq t_fl t_rl t_rr t_fr"
+            a list with zero or one line:
+            "E seq timestamp_us t_fl t_rl t_rr t_fr"
         """
         now = time.time()
         dt = now - self._last_update
-        if dt < self.encoder_dt:
+        # simulate ~50 Hz output but dynamically handle timing drift
+        if dt < 0.02:
             return []
-        # lock the step to reduce drift vs. target rate
+
         self._last_update = now
+        timestamp_us = int(now * 1e6)  # simulated microsecond timestamp
 
         # integrate encoder ticks based on wheel speeds
         # Δticks = (ω [rad/s] * dt / 2π) * ticks_per_rev * encoder_sign
@@ -102,22 +103,26 @@ class SimulationInterface:
         t_rr = int(round(self._t_rr_f))
         t_fr = int(round(self._t_fr_f))
 
-        line = f"E {self._seq} {t_fl} {t_rl} {t_rr} {t_fr}"
+        line = f"E {self._seq} {timestamp_us} {t_fl} {t_rl} {t_rr} {t_fr}"
         return [line]
 
     # ------------------------------------------------------------------
-    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int]]:
-        """Parse a simulated encoder line (same API as SerialBridge)."""
+    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int, int]]:
+        """
+        Parse a simulated encoder line.
+        Returns: (seq, timestamp_us, t_fl, t_rl, t_rr, t_fr)
+        """
         parts = line.split()
-        if len(parts) != 6 or parts[0] != "E":
+        if len(parts) != 7 or parts[0] != "E":
             return None
         try:
             seq = int(parts[1])
-            t_fl = int(parts[2])
-            t_rl = int(parts[3])
-            t_rr = int(parts[4])
-            t_fr = int(parts[5])
-            return seq, t_fl, t_rl, t_rr, t_fr
+            ts_us = int(parts[2])
+            t_fl = int(parts[3])
+            t_rl = int(parts[4])
+            t_rr = int(parts[5])
+            t_fr = int(parts[6])
+            return seq, ts_us, t_fl, t_rl, t_rr, t_fr
         except ValueError:
             return None
 
