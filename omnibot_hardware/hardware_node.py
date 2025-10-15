@@ -10,6 +10,7 @@ or a simulated backend (SimulationInterface).
 import math
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from geometry_msgs.msg import Twist, TransformStamped
 from sensor_msgs.msg import JointState
 from nav_msgs.msg import Odometry
@@ -56,6 +57,25 @@ class HardwareNode(Node):
         self._log_commands = bool(self.get_parameter('log_commands').value)
 
         # ------------------------------------------------------------------
+        # QoS Profiles (per topic)
+        # ------------------------------------------------------------------
+        qos_cmd = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        qos_odom = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        qos_joint = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
+        # ------------------------------------------------------------------
         # Backend selection (real ↔ simulation)
         # ------------------------------------------------------------------
         if use_sim:
@@ -77,9 +97,9 @@ class HardwareNode(Node):
         # ------------------------------------------------------------------
         # ROS interfaces
         # ------------------------------------------------------------------
-        self.cmd_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_cb, 10)
-        self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
-        self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.cmd_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_cb, qos_cmd)
+        self.joint_pub = self.create_publisher(JointState, '/joint_states', qos_joint)
+        self.odom_pub = self.create_publisher(Odometry, '/odom', qos_odom)
 
         # Internal state
         self._last_cmd = Twist()
