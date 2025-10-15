@@ -40,7 +40,7 @@ class HardwareNode(Node):
         self.declare_parameter('mecanum_layout', 'X')
         self.declare_parameter('log_commands', False)
         self.declare_parameter('odom_hz', 50.0)
-        self.declare_parameter('tf_hz', 50.0)
+        self.declare_parameter('tf_hz', 30.0)
 
         use_sim = bool(self.get_parameter('use_sim').value)
         port = self.get_parameter('port').value
@@ -84,10 +84,13 @@ class HardwareNode(Node):
         self._last_cmd_time = self.get_clock().now()
         self._cmd_timeout = float(self.get_parameter('cmd_timeout').value)
         self._last_encoder_ts = None  # for dt computation
+        self._last_tf_stamp = None
 
+        # ------------------------------------------------------------------
         # Timers
-        self._update_hz = max(self._odom_hz, 50.0)
-        self.create_timer(1.0 / self._update_hz, self._update_loop)
+        # ------------------------------------------------------------------
+        self.create_timer(1.0 / self._odom_hz, self._update_loop)   # odom + encoders
+        self.create_timer(1.0 / self._tf_hz, self._publish_tf)      # TF broadcaster
 
         self.get_logger().info("HardwareNode initialized successfully.")
 
@@ -115,8 +118,6 @@ class HardwareNode(Node):
 
         # ---- Inverse kinematics ----
         w_fl, w_rl, w_rr, w_fr = self.kin.inverse(vx, vy, wz)
-
-        # ---- Send to backend ----
         self.backend.send_motor_speeds(w_fl, w_rl, w_rr, w_fr)
 
         # ---- Read incoming encoder data ----
@@ -125,22 +126,13 @@ class HardwareNode(Node):
             if not enc:
                 continue
 
-            # Expected format: seq, ts_us, t_fl, t_rl, t_rr, t_fr
-            if len(enc) == 6:
-                seq, ts_us, t_fl, t_rl, t_rr, t_fr = enc
-            else:
-                # fallback for old format (no timestamp)
-                seq, t_fl, t_rl, t_rr, t_fr = enc
-                ts_us = None
-
-            # --- Compute dynamic dt ---
+            seq, ts_us, t_fl, t_rl, t_rr, t_fr = enc
             dt = None
             if ts_us is not None:
                 if self._last_encoder_ts is not None:
-                    dt = (ts_us - self._last_encoder_ts) / 1e6  # µs → s
+                    dt = (ts_us - self._last_encoder_ts) / 1e6
                 self._last_encoder_ts = ts_us
 
-            # skip update if dt invalid or not yet available
             if dt is None or dt <= 0.0 or dt > 0.2:
                 continue
 
@@ -151,7 +143,7 @@ class HardwareNode(Node):
 
     # ------------------------------------------------------------------
     def _publish_odometry(self, vx: float, vy: float, wz: float):
-        """Publish Odometry, TF, and JointState."""
+        """Publish Odometry and JointState."""
         x, y, yaw = self.odom.get_pose()
         stamp = self.get_clock().now().to_msg()
 
@@ -169,17 +161,6 @@ class HardwareNode(Node):
         odom.twist.twist.angular.z = wz
         self.odom_pub.publish(odom)
 
-        # --- TF transform ---
-        t = TransformStamped()
-        t.header.stamp = stamp
-        t.header.frame_id = 'odom'
-        t.child_frame_id = 'base_link'
-        t.transform.translation.x = x
-        t.transform.translation.y = y
-        t.transform.rotation.z = odom.pose.pose.orientation.z
-        t.transform.rotation.w = odom.pose.pose.orientation.w
-        self.tf_broadcaster.sendTransform(t)
-
         # --- JointState message ---
         js = JointState()
         js.header.stamp = stamp
@@ -187,6 +168,26 @@ class HardwareNode(Node):
         js.position = self.odom.get_wheel_angles()
         js.velocity = [0.0, 0.0, 0.0, 0.0]
         self.joint_pub.publish(js)
+
+        # Store for TF publisher
+        self._last_tf_stamp = (x, y, yaw, stamp)
+
+    # ------------------------------------------------------------------
+    def _publish_tf(self):
+        """Publish latest TF transform at independent rate."""
+        if self._last_tf_stamp is None:
+            return
+
+        x, y, yaw, stamp = self._last_tf_stamp
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'base_link'
+        t.transform.translation.x = x
+        t.transform.translation.y = y
+        t.transform.rotation.z = math.sin(yaw / 2.0)
+        t.transform.rotation.w = math.cos(yaw / 2.0)
+        self.tf_broadcaster.sendTransform(t)
 
     # ------------------------------------------------------------------
     def destroy_node(self):
