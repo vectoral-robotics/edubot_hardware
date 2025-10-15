@@ -19,16 +19,21 @@ class SimulationInterface:
     Emits lines of the form: "E seq timestamp_us t_fl t_rl t_rr t_fr"
     """
 
-    def __init__(self,
-                 ticks_per_rev: int = 4320,
-                 wheel_radius: float = 0.04):
+    def __init__(
+        self,
+        ticks_per_rev: int = 4320,
+        wheel_radius: float = 0.04,
+        logger=None
+    ):
         """
         Args:
             ticks_per_rev: simulated encoder resolution [ticks/rev]
             wheel_radius: wheel radius [m] (not strictly needed here)
+            logger: optional rclpy logger (passed from HardwareNode)
         """
         self.ticks_per_rev = float(ticks_per_rev)
         self.wheel_radius = float(wheel_radius)
+        self.logger = logger
 
         # current simulated wheel speeds [rad/s]
         self._w_fl = 0.0
@@ -49,7 +54,7 @@ class SimulationInterface:
         self._seq = 0
         self._last_update = time.time()
 
-        print("SimulationInterface initialized (no real hardware)")
+        self._log_info("SimulationInterface initialized (no real hardware)")
 
     # ------------------------------------------------------------------
     def is_connected(self) -> bool:
@@ -63,6 +68,11 @@ class SimulationInterface:
         self._w_rl = float(w_rl)
         self._w_rr = float(w_rr)
         self._w_fr = float(w_fr)
+
+        self._log_debug(
+            f"Motor speeds set (rad/s): FL={self._w_fl:.2f}, RL={self._w_rl:.2f}, "
+            f"RR={self._w_rr:.2f}, FR={self._w_fr:.2f}"
+        )
 
     # ------------------------------------------------------------------
     def read_lines(self) -> List[str]:
@@ -104,6 +114,12 @@ class SimulationInterface:
         t_fr = int(round(self._t_fr_f))
 
         line = f"E {self._seq} {timestamp_us} {t_fl} {t_rl} {t_rr} {t_fr}"
+
+        self._log_debug(
+            f"Simulated encoder line: seq={self._seq}, ts={timestamp_us}, "
+            f"ticks=[{t_fl}, {t_rl}, {t_rr}, {t_fr}]"
+        )
+
         return [line]
 
     # ------------------------------------------------------------------
@@ -124,9 +140,30 @@ class SimulationInterface:
             t_fr = int(parts[6])
             return seq, ts_us, t_fl, t_rl, t_rr, t_fr
         except ValueError:
+            self._log_warn(f"Failed to parse encoder line: {line}")
             return None
 
     # ------------------------------------------------------------------
     def close(self):
         """Stop simulation (noop)."""
-        print("SimulationInterface closed.")
+        self._log_info("SimulationInterface closed.")
+
+    # ------------------------------------------------------------------
+    # Internal logging helpers
+    # ------------------------------------------------------------------
+    def _log_info(self, msg: str):
+        if self.logger:
+            self.logger.info(msg)
+        else:
+            print(msg)
+
+    def _log_warn(self, msg: str):
+        if self.logger:
+            self.logger.warn(msg)
+        else:
+            print(f"WARNING: {msg}")
+
+    def _log_debug(self, msg: str):
+        if self.logger:
+            self.logger.debug(msg)
+        # don't print debug messages without a logger

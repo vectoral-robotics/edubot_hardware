@@ -42,6 +42,7 @@ class HardwareNode(Node):
         self.declare_parameter('odom_hz', 50.0)
         self.declare_parameter('tf_hz', 30.0)
 
+        # Read parameters
         use_sim = bool(self.get_parameter('use_sim').value)
         port = self.get_parameter('port').value
         baud = self.get_parameter('baud').value
@@ -52,17 +53,18 @@ class HardwareNode(Node):
         layout = self.get_parameter('mecanum_layout').value.upper()
         self._odom_hz = float(self.get_parameter('odom_hz').value)
         self._tf_hz = float(self.get_parameter('tf_hz').value)
+        self._log_commands = bool(self.get_parameter('log_commands').value)
 
         # ------------------------------------------------------------------
         # Backend selection (real ↔ simulation)
         # ------------------------------------------------------------------
         if use_sim:
             from .simulation_interface import SimulationInterface
-            self.backend = SimulationInterface(ticks_per_rev, R)
+            self.backend = SimulationInterface(ticks_per_rev, R, logger=self.get_logger())
             self.get_logger().info("Running in SIMULATION mode.")
         else:
             from .serial_interface import SerialBridge
-            self.backend = SerialBridge(port, baud)
+            self.backend = SerialBridge(port, baud, logger=self.get_logger())
             self.get_logger().info(f"Connected to Arduino on {port} @ {baud} baud.")
 
         # ------------------------------------------------------------------
@@ -102,6 +104,11 @@ class HardwareNode(Node):
         self._last_cmd = msg
         self._last_cmd_time = self.get_clock().now()
 
+        if self._log_commands:
+            self.get_logger().debug(
+                f"/cmd_vel: vx={msg.linear.x:.3f}, vy={msg.linear.y:.3f}, wz={msg.angular.z:.3f}"
+            )
+
     # ------------------------------------------------------------------
     def _update_loop(self):
         """Main periodic update: send commands, read encoders, update odometry."""
@@ -120,6 +127,11 @@ class HardwareNode(Node):
         w_fl, w_rl, w_rr, w_fr = self.kin.inverse(vx, vy, wz)
         self.backend.send_motor_speeds(w_fl, w_rl, w_rr, w_fr)
 
+        if self._log_commands:
+            self.get_logger().debug(
+                f"Motor cmd: w_fl={w_fl:.2f}, w_rl={w_rl:.2f}, w_rr={w_rr:.2f}, w_fr={w_fr:.2f}"
+            )
+
         # ---- Read incoming encoder data ----
         for line in self.backend.read_lines():
             enc = self.backend.parse_encoder_line(line)
@@ -134,6 +146,9 @@ class HardwareNode(Node):
                 self._last_encoder_ts = ts_us
 
             if dt is None or dt <= 0.0 or dt > 0.2:
+                self.get_logger().debug(
+                    f"Skipping odometry update: invalid dt={dt}"
+                )
                 continue
 
             vel = self.odom.update((t_fl, t_rl, t_rr, t_fr), dt)
@@ -172,6 +187,12 @@ class HardwareNode(Node):
         # Store for TF publisher
         self._last_tf_stamp = (x, y, yaw, stamp)
 
+        if self._log_commands:
+            self.get_logger().debug(
+                f"Odom update: x={x:.3f}, y={y:.3f}, yaw={math.degrees(yaw):.1f}°, "
+                f"vx={vx:.3f}, vy={vy:.3f}, wz={wz:.3f}"
+            )
+
     # ------------------------------------------------------------------
     def _publish_tf(self):
         """Publish latest TF transform at independent rate."""
@@ -192,7 +213,11 @@ class HardwareNode(Node):
     # ------------------------------------------------------------------
     def destroy_node(self):
         """Ensure backend closed cleanly on shutdown."""
-        self.backend.close()
+        self.get_logger().info("Shutting down HardwareNode...")
+        try:
+            self.backend.close()
+        except Exception as e:
+            self.get_logger().warn(f"Error while closing backend: {e}")
         super().destroy_node()
 
 
@@ -204,7 +229,7 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        node.get_logger().info("KeyboardInterrupt — stopping OmniBot.")
     finally:
         node.destroy_node()
         rclpy.shutdown()
