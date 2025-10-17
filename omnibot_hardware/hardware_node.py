@@ -39,7 +39,7 @@ class HardwareNode(Node):
         self.declare_parameter('ticks_per_rev', 4320.0)
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('mecanum_layout', 'X')
-        self.declare_parameter('log_commands', False)
+        self.declare_parameter('log_commands', True)
         self.declare_parameter('odom_hz', 50.0)
         self.declare_parameter('tf_hz', 30.0)
 
