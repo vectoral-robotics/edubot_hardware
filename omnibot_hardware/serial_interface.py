@@ -73,7 +73,8 @@ class SerialBridge:
             self._log_warn("Attempted to send motor speeds, but serial not connected.")
             return
 
-        cmd = f"M {w_fl:.2f} {w_rl:.2f} {w_rr:.2f} {w_fr:.2f}\n"
+        cmd = f"M {w_rr:.2f} {w_fr:.2f} {w_rl:.2f} {w_fl:.2f}\n"
+
         try:
             with self._lock:
                 self.ser.write(cmd.encode("utf-8"))
@@ -135,11 +136,12 @@ class SerialBridge:
         try:
             seq = int(parts[1])
             ts_us = int(parts[2])
-            t_fl = int(parts[3])
-            t_rl = int(parts[4])
-            t_rr = int(parts[5])
-            t_fr = int(parts[6])
+            t_rr = int(parts[3])
+            t_fr = int(parts[4])
+            t_rl = int(parts[5])
+            t_fl = int(parts[6])
             return seq, ts_us, t_fl, t_rl, t_rr, t_fr
+
         except ValueError:
             self._log_warn(f"Failed to parse encoder line: {line}")
             return None
