@@ -140,7 +140,7 @@ class SerialBridge:
             t_fr = int(parts[4])
             t_rl = int(parts[5])
             t_fl = int(parts[6])
-            return seq, ts_us, t_fl, t_rl, t_rr, t_fr
+            return seq, ts_us, t_rr, t_fr, t_rl, t_fl
 
         except ValueError:
             self._log_warn(f"Failed to parse encoder line: {line}")
