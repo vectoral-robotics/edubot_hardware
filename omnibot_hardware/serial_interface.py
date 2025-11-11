@@ -1,6 +1,6 @@
 # omnibot_hardware/serial_interface.py
 """
-Serial interface for communicating with the Arduino-based motor controller.
+Serial interface for communicating with the ESP32-based motor controller.
 
 Handles:
  - Opening and maintaining a serial connection
@@ -17,11 +17,13 @@ from typing import Optional, List, Tuple
 
 class SerialBridge:
     """
-    Bidirectional interface to the Arduino controller.
+    Bidirectional interface to the ESP32 motor controller.
 
     Expected protocol:
-        - TX (to Arduino): "M w_fl w_rl w_rr w_fr\n"
-        - RX (from Arduino): "E seq timestamp_us t_fl t_rl t_rr t_fr\n"
+        - TX (to ESP32): "M w_rr w_fr w_rl w_fl\n"
+          where each value is the desired wheel angular velocity [rad/s]
+        - RX (from ESP32): "E seq timestamp_us t_rr t_fr t_rl t_fl\n"
+          where t_* are cumulative encoder tick counts
     """
 
     def __init__(
@@ -50,24 +52,24 @@ class SerialBridge:
         # Try to open connection
         try:
             self.ser = serial.Serial(port, baud, timeout=timeout)
-            time.sleep(2.0)  # Allow Arduino reset
-            self._log_info(f"Connected to Arduino on {port} @ {baud} baud")
+            time.sleep(2.0)  # allow ESP32 to initialize
+            self._log_info(f"Connected to ESP32 on {port} @ {baud} baud")
         except serial.SerialException as e:
             self._log_warn(f"Serial connection failed: {e}")
             self.ser = None
 
     # ------------------------------------------------------------------
     def is_connected(self) -> bool:
-        """Check if serial connection is valid."""
+        """Check if the serial connection is open."""
         return self.ser is not None and self.ser.is_open
 
     # ------------------------------------------------------------------
-    def send_motor_speeds(self, w_fl: float, w_rl: float, w_rr: float, w_fr: float):
+    def send_motor_speeds(self, w_rr: float, w_fr: float, w_rl: float, w_fl: float):
         """
-        Send motor angular velocities to Arduino.
+        Send wheel angular velocities to the ESP32.
 
         Args:
-            w_fl, w_rl, w_rr, w_fr: wheel angular velocities [rad/s]
+            w_rr, w_fr, w_rl, w_fl: wheel angular velocities [rad/s]
         """
         if not self.is_connected():
             self._log_warn("Attempted to send motor speeds, but serial not connected.")
@@ -118,11 +120,13 @@ class SerialBridge:
     # ------------------------------------------------------------------
     def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int, int]]:
         """
-        Parse an encoder feedback line of the form:
-            "E seq timestamp_us t_fl t_rl t_rr t_fr"
+        Parse an encoder feedback line from the ESP32.
+
+        Expected format:
+            "E seq timestamp_us t_rr t_fr t_rl t_fl"
 
         Returns:
-            (seq, timestamp_us, t_fl, t_rl, t_rr, t_fr)
+            tuple: (seq, timestamp_us, t_rr, t_fr, t_rl, t_fl)
             or None if invalid.
         """
         if not line.startswith("E"):
@@ -141,7 +145,6 @@ class SerialBridge:
             t_rl = int(parts[5])
             t_fl = int(parts[6])
             return seq, ts_us, t_rr, t_fr, t_rl, t_fl
-
         except ValueError:
             self._log_warn(f"Failed to parse encoder line: {line}")
             return None
