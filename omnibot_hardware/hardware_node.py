@@ -1,10 +1,14 @@
 # omnibot_hardware/hardware_node.py
 """
-Main ROS2 hardware node for OmniBot.
+Main ROS2 hardware node for OmniBot (ESP32-based).
 
 Bridges ROS messages (/cmd_vel, /odom, /joint_states, TF)
-with either a real Arduino-based controller (SerialBridge)
+with either a real ESP32-based motor controller (SerialBridge)
 or a simulated backend (SimulationInterface).
+
+ESP32 protocol:
+ - TX: "M w_rr w_fr w_rl w_fl"  (wheel angular velocities [rad/s])
+ - RX: "E seq timestamp_us t_rr t_fr t_rl t_fl"  (cumulative encoder ticks)
 """
 
 import math
@@ -21,11 +25,11 @@ from .odometry import OdometryEstimator
 
 
 class HardwareNode(Node):
-    """ROS2 Node managing robot hardware or simulation backend."""
+    """ROS2 Node managing the OmniBot ESP32 hardware or simulation backend."""
 
     def __init__(self):
         super().__init__('hardware_node')
-        self.get_logger().info("OmniBot Hardware Node starting up...")
+        self.get_logger().info("OmniBot ESP32 Hardware Node starting up...")
 
         # ------------------------------------------------------------------
         # Parameters
@@ -57,7 +61,7 @@ class HardwareNode(Node):
         self._log_commands = bool(self.get_parameter('log_commands').value)
 
         # ------------------------------------------------------------------
-        # QoS Profiles (per topic)
+        # QoS Profiles
         # ------------------------------------------------------------------
         qos_cmd = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -85,7 +89,7 @@ class HardwareNode(Node):
         else:
             from .serial_interface import SerialBridge
             self.backend = SerialBridge(port, baud, logger=self.get_logger())
-            self.get_logger().info(f"Connected to Arduino on {port} @ {baud} baud.")
+            self.get_logger().info(f"Connected to ESP32 on {port} @ {baud} baud.")
 
         # ------------------------------------------------------------------
         # Submodules
@@ -105,19 +109,15 @@ class HardwareNode(Node):
         self._last_cmd = Twist()
         self._last_cmd_time = self.get_clock().now()
         self._cmd_timeout = float(self.get_parameter('cmd_timeout').value)
-        self._last_encoder_ts = None  # for dt computation
+        self._last_encoder_ts = None
         self._last_tf_stamp = None
 
-        # ------------------------------------------------------------------
         # Timers
-        # ------------------------------------------------------------------
-        self.create_timer(1.0 / self._odom_hz, self._update_loop)   # odom + encoders
-        self.create_timer(1.0 / self._tf_hz, self._publish_tf)      # TF broadcaster
+        self.create_timer(1.0 / self._odom_hz, self._update_loop)
+        self.create_timer(1.0 / self._tf_hz, self._publish_tf)
 
-        self.get_logger().info("HardwareNode initialized successfully.")
+        self.get_logger().info("ESP32 HardwareNode initialized successfully.")
 
-    # ------------------------------------------------------------------
-    # ROS Callbacks
     # ------------------------------------------------------------------
     def cmd_cb(self, msg: Twist):
         """Store the latest /cmd_vel message."""
@@ -131,11 +131,11 @@ class HardwareNode(Node):
 
     # ------------------------------------------------------------------
     def _update_loop(self):
-        """Main periodic update: send commands, read encoders, update odometry."""
+        """Periodic update: send motor commands, read encoders, update odometry."""
         now = self.get_clock().now()
         dt_cmd = (now - self._last_cmd_time).nanoseconds * 1e-9
 
-        # Timeout handling → stop if no command received
+        # Stop if command timeout exceeded
         if 0.0 < self._cmd_timeout < dt_cmd:
             vx = vy = wz = 0.0
         else:
@@ -144,21 +144,22 @@ class HardwareNode(Node):
             wz = self._last_cmd.angular.z
 
         # ---- Inverse kinematics ----
-        w_fl, w_rl, w_rr, w_fr = self.kin.inverse(vx, vy, wz)
-        self.backend.send_motor_speeds(w_fl, w_rl, w_rr, w_fr)
+        w_rr, w_fr, w_rl, w_fl = self.kin.inverse(vx, vy, wz)
+        self.backend.send_motor_speeds(w_rr, w_fr, w_rl, w_fl)
 
         if self._log_commands:
             self.get_logger().debug(
-                f"Motor cmd: w_fl={w_fl:.2f}, w_rl={w_rl:.2f}, w_rr={w_rr:.2f}, w_fr={w_fr:.2f}"
+                f"Motor cmd: w_rr={w_rr:.2f}, w_fr={w_fr:.2f}, w_rl={w_rl:.2f}, w_fl={w_fl:.2f}"
             )
 
-        # ---- Read incoming encoder data ----
+        # ---- Read encoder data ----
         for line in self.backend.read_lines():
             enc = self.backend.parse_encoder_line(line)
             if not enc:
                 continue
 
-            seq, ts_us, t_fl, t_rl, t_rr, t_fr = enc
+            seq, ts_us, t_rr, t_fr, t_rl, t_fl = enc
+
             dt = None
             if ts_us is not None:
                 if self._last_encoder_ts is not None:
@@ -166,19 +167,18 @@ class HardwareNode(Node):
                 self._last_encoder_ts = ts_us
 
             if dt is None or dt <= 0.0 or dt > 0.2:
-                self.get_logger().debug(
-                    f"Skipping odometry update: invalid dt={dt}"
-                )
+                self.get_logger().debug(f"Skipping odometry update: invalid dt={dt}")
                 continue
 
-            vel = self.odom.update((t_fl, t_rl, t_rr, t_fr), dt)
+            # Pass ticks in correct order (RR, FR, RL, FL)
+            vel = self.odom.update((t_rr, t_fr, t_rl, t_fl), dt)
             if vel:
                 vx, vy, wz = vel
                 self._publish_odometry(vx, vy, wz)
 
     # ------------------------------------------------------------------
     def _publish_odometry(self, vx: float, vy: float, wz: float):
-        """Publish Odometry and JointState."""
+        """Publish Odometry and JointState messages."""
         x, y, yaw = self.odom.get_pose()
         stamp = self.get_clock().now().to_msg()
 
@@ -199,7 +199,7 @@ class HardwareNode(Node):
         # --- JointState message ---
         js = JointState()
         js.header.stamp = stamp
-        js.name = ['wheel_fl_joint', 'wheel_fr_joint', 'wheel_rl_joint', 'wheel_rr_joint']
+        js.name = ['wheel_rr_joint', 'wheel_fr_joint', 'wheel_rl_joint', 'wheel_fl_joint']
         js.position = self.odom.get_wheel_angles()
         js.velocity = [0.0, 0.0, 0.0, 0.0]
         self.joint_pub.publish(js)
@@ -215,7 +215,7 @@ class HardwareNode(Node):
 
     # ------------------------------------------------------------------
     def _publish_tf(self):
-        """Publish latest TF transform at independent rate."""
+        """Publish TF transform."""
         if self._last_tf_stamp is None:
             return
 
@@ -233,7 +233,7 @@ class HardwareNode(Node):
     # ------------------------------------------------------------------
     def destroy_node(self):
         """Ensure backend closed cleanly on shutdown."""
-        self.get_logger().info("Shutting down HardwareNode...")
+        self.get_logger().info("Shutting down ESP32 HardwareNode...")
         try:
             self.backend.close()
         except Exception as e:
@@ -243,7 +243,7 @@ class HardwareNode(Node):
 
 # ----------------------------------------------------------------------
 def main(args=None):
-    """Main entry point for the hardware node."""
+    """Main entry point for the ESP32 hardware node."""
     rclpy.init(args=args)
     node = HardwareNode()
     try:
