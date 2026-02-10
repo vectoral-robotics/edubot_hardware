@@ -199,7 +199,7 @@ class HardwareNode(Node):
         # --- JointState message ---
         js = JointState()
         js.header.stamp = stamp
-        js.name = ['wheel_rr_joint', 'wheel_fr_joint', 'wheel_rl_joint', 'wheel_fl_joint']
+        js.name = ['wheel_rr', 'wheel_fr', 'wheel_rl', 'wheel_fl']
         js.position = self.odom.get_wheel_angles()
         js.velocity = [0.0, 0.0, 0.0, 0.0]
         self.joint_pub.publish(js)
