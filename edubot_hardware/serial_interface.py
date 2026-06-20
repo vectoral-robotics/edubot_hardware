@@ -1,4 +1,4 @@
-# omnibot_hardware/serial_interface.py
+# edubot_hardware/serial_interface.py
 """
 Serial interface for communicating with the ESP32-based motor controller.
 

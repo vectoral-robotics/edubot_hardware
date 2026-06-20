@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 from glob import glob
 import os
 
-package_name = 'omnibot_hardware'
+package_name = 'edubot_hardware'
 
 setup(
     name=package_name,
@@ -30,7 +30,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'hardware_node = omnibot_hardware.hardware_node:main',
+            'hardware_node = edubot_hardware.hardware_node:main',
         ],
     },
 )

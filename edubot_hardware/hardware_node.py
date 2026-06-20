@@ -1,6 +1,6 @@
-# omnibot_hardware/hardware_node.py
+# edubot_hardware/hardware_node.py
 """
-Main ROS2 hardware node for OmniBot (ESP32-based).
+Main ROS2 hardware node for EduBot (ESP32-based).
 
 Bridges ROS messages (/cmd_vel, /odom, /joint_states, TF)
 with either a real ESP32-based motor controller (SerialBridge)
@@ -25,11 +25,11 @@ from .odometry import OdometryEstimator
 
 
 class HardwareNode(Node):
-    """ROS2 Node managing the OmniBot ESP32 hardware or simulation backend."""
+    """ROS2 Node managing the EduBot ESP32 hardware or simulation backend."""
 
     def __init__(self):
         super().__init__('hardware_node')
-        self.get_logger().info("OmniBot ESP32 Hardware Node starting up...")
+        self.get_logger().info("EduBot ESP32 Hardware Node starting up...")
 
         # ------------------------------------------------------------------
         # Parameters
@@ -249,7 +249,7 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info("KeyboardInterrupt — stopping OmniBot.")
+        node.get_logger().info("KeyboardInterrupt — stopping EduBot.")
     finally:
         node.destroy_node()
         rclpy.shutdown()

@@ -1,6 +1,6 @@
-# omnibot_hardware/simulation_interface.py
+# edubot_hardware/simulation_interface.py
 """
-Simulation interface for the ESP32-based OmniBot.
+Simulation interface for the ESP32-based EduBot.
 
 Emulates the SerialBridge communication protocol used by the real ESP32
 motor controller.

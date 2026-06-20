@@ -1,6 +1,6 @@
-# omnibot_hardware/mecanum_kinematics.py
+# edubot_hardware/mecanum_kinematics.py
 """
-Mecanum wheel kinematics helper for the ESP32-based OmniBot.
+Mecanum wheel kinematics helper for the ESP32-based EduBot.
 
 Provides forward and inverse kinematics for a four-wheeled mecanum platform
 following ROS conventions:

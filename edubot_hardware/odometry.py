@@ -1,4 +1,4 @@
-# omnibot_hardware/odometry.py
+# edubot_hardware/odometry.py
 """
 Odometry computation for a mecanum-driven robot.
 
