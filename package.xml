@@ -10,7 +10,7 @@
 
   <maintainer email="info@vectoral.ch">Vectoral</maintainer>
   <author>Stefan Siegler</author>
-  <license>Apache-2.0</license>
+  <license file="LICENSE">PolyForm-Perimeter-1.0.0</license>
 
   <url type="repository">https://github.com/vectoral-robotics/edubot_hardware</url>
 
