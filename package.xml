@@ -3,13 +3,16 @@
   <name>edubot_hardware</name>
   <version>0.0.1</version>
   <description>
-    ROS 2 hardware interface and simulation backend for the Omnidirectional Robot.
-    Provides a serial bridge for the Arduino controller and a physics-free simulation
+    ROS 2 hardware interface and simulation backend for the EduBot robot.
+    Provides a serial bridge for the ESP32 controller and a physics-free simulation
     mode for testing without hardware.
   </description>
 
-  <maintainer email="dev@siegler.one">Stefan Siegler</maintainer>
+  <maintainer email="info@vectoral.ch">Vectoral</maintainer>
+  <author>Stefan Siegler</author>
   <license>Apache-2.0</license>
+
+  <url type="repository">https://github.com/vectoral-robotics/edubot_hardware</url>
 
   <!-- Build system -->
   <buildtool_depend>ament_python</buildtool_depend>

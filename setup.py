@@ -22,9 +22,9 @@ setup(
         "pyserial",  # rosdep key: python3-serial
     ],
     zip_safe=True,
-    maintainer="Stefan Siegler",
-    maintainer_email="dev@siegler.cône",
-    description="ROS 2 Hardware and Simulation Backend for the Omnidirectional Robot.",
+    maintainer="Vectoral",
+    maintainer_email="info@vectoral.ch",
+    description="ROS 2 hardware and simulation backend for the EduBot robot.",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
