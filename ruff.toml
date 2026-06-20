@@ -1,0 +1,10 @@
+# EduBot Python lint + format config (ruff).
+# Kept identical across edubot_hardware, edubot_demos, edubot_firmware.
+line-length = 99
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I"]
+
+[format]
+quote-style = "double"
