@@ -3,15 +3,13 @@ import threading
 import time
 from typing import Optional
 
+import cv2
 import rclpy
+from cv_bridge import CvBridge
+from flask import Flask, Response
 from rclpy.node import Node
-
 from sensor_msgs.msg import Image
 
-import cv2
-from cv_bridge import CvBridge
-
-from flask import Flask, Response
 
 # ---------- ROS2 part ----------
 class ImageBufferNode(Node):
@@ -86,10 +84,11 @@ def create_app(node: ImageBufferNode) -> Flask:
                     time.sleep(0.1)
                     continue
 
-                yield (b"--" + boundary.encode() + b"\r\n"
-                       b"Content-Type: image/jpeg\r\n"
-                       b"Content-Length: " + str(len(data)).encode() + b"\r\n\r\n" +
-                       data + b"\r\n")
+                yield (
+                    b"--" + boundary.encode() + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n"
+                )
                 time.sleep(0.05)  # ~20 FPS max, je nach cam2image
 
         return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")

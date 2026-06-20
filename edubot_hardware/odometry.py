@@ -11,7 +11,7 @@ Compatible with the ESP32-based motor controller using encoder format:
 """
 
 import math
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 
 class OdometryEstimator:
@@ -25,12 +25,14 @@ class OdometryEstimator:
       - velocity estimation (vx, vy, wz)
     """
 
-    def __init__(self,
-                 wheel_radius: float,
-                 base_length: float,
-                 base_width: float,
-                 ticks_per_rev: float,
-                 mecanum_layout: str = "X"):
+    def __init__(
+        self,
+        wheel_radius: float,
+        base_length: float,
+        base_width: float,
+        ticks_per_rev: float,
+        mecanum_layout: str = "X",
+    ):
         self.R = wheel_radius
         self.Lx = base_length
         self.Ly = base_width
@@ -51,9 +53,9 @@ class OdometryEstimator:
         self._wheel_angles = [0.0, 0.0, 0.0, 0.0]
 
     # ------------------------------------------------------------------
-    def update(self,
-               ticks: Tuple[int, int, int, int],
-               dt: float) -> Optional[Tuple[float, float, float]]:
+    def update(
+        self, ticks: Tuple[int, int, int, int], dt: float
+    ) -> Optional[Tuple[float, float, float]]:
         """
         Update odometry from new encoder tick readings.
 
@@ -128,5 +130,6 @@ class OdometryEstimator:
         self._wheel_angles = [0.0, 0.0, 0.0, 0.0]
 
     def __repr__(self):
-        return (f"<OdometryEstimator x={self.x:.3f} y={self.y:.3f} "
-                f"yaw={math.degrees(self.yaw):.1f}°>")
+        return (
+            f"<OdometryEstimator x={self.x:.3f} y={self.y:.3f} yaw={math.degrees(self.yaw):.1f}°>"
+        )

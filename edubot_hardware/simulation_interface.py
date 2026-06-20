@@ -16,7 +16,7 @@ OdometryEstimator and HardwareNode to behave identically in simulation.
 
 import math
 import time
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 
 class SimulationInterface:
@@ -28,12 +28,7 @@ class SimulationInterface:
         "E seq timestamp_us t_rr t_fr t_rl t_fl"
     """
 
-    def __init__(
-        self,
-        ticks_per_rev: int = 4320,
-        wheel_radius: float = 0.04,
-        logger=None
-    ):
+    def __init__(self, ticks_per_rev: int = 4320, wheel_radius: float = 0.04, logger=None):
         """
         Args:
             ticks_per_rev: simulated encoder resolution [ticks/rev]
@@ -175,4 +170,3 @@ class SimulationInterface:
         if self.logger:
             self.logger.debug(msg)
         # no stdout debug fallback
-

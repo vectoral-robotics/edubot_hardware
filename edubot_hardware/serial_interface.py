@@ -9,10 +9,11 @@ Handles:
  - Fault tolerance and optional ROS2 logging
 """
 
-import serial
 import threading
 import time
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
+
+import serial
 
 
 class SerialBridge:
@@ -27,11 +28,7 @@ class SerialBridge:
     """
 
     def __init__(
-        self,
-        port: str = "/dev/ttyUSB0",
-        baud: int = 115200,
-        timeout: float = 0.0,
-        logger=None
+        self, port: str = "/dev/ttyUSB0", baud: int = 115200, timeout: float = 0.0, logger=None
     ):
         """
         Args:
@@ -110,7 +107,7 @@ class SerialBridge:
             if idx < 0:
                 break
             line = self._rxbuf[:idx].decode("utf-8", errors="ignore").strip()
-            self._rxbuf = self._rxbuf[idx + 1:]
+            self._rxbuf = self._rxbuf[idx + 1 :]
             if line:
                 lines.append(line)
                 self._log_debug(f"RX ← {line}")

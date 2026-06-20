@@ -19,8 +19,6 @@ This order matches the ESP32 controller protocol:
     RX: E seq time t_rr t_fr t_rl t_fl
 """
 
-import math
-
 
 class MecanumKinematics:
     """
@@ -90,6 +88,7 @@ class MecanumKinematics:
 
     # --------------------------------------------------------------
     def __repr__(self):
-        return (f"<MecanumKinematics R={self.R:.3f} Lx={self.Lx:.3f} Ly={self.Ly:.3f} "
-                f"layout='{self.layout}'>")
-
+        return (
+            f"<MecanumKinematics R={self.R:.3f} Lx={self.Lx:.3f} Ly={self.Ly:.3f} "
+            f"layout='{self.layout}'>"
+        )

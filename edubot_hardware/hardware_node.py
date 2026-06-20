@@ -12,12 +12,13 @@ ESP32 protocol:
 """
 
 import math
+
 import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
-from geometry_msgs.msg import Twist, TransformStamped
-from sensor_msgs.msg import JointState
+from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
+from rclpy.node import Node
+from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from sensor_msgs.msg import JointState
 from tf2_ros import TransformBroadcaster
 
 from .mecanum_kinematics import MecanumKinematics
@@ -28,37 +29,37 @@ class HardwareNode(Node):
     """ROS2 Node managing the EduBot ESP32 hardware or simulation backend."""
 
     def __init__(self):
-        super().__init__('hardware_node')
+        super().__init__("hardware_node")
         self.get_logger().info("EduBot ESP32 Hardware Node starting up...")
 
         # ------------------------------------------------------------------
         # Parameters
         # ------------------------------------------------------------------
-        self.declare_parameter('use_sim', False)
-        self.declare_parameter('port', '/dev/ttyUSB0')
-        self.declare_parameter('baud', 115200)
-        self.declare_parameter('wheel_radius', 0.04)
-        self.declare_parameter('base_length', 0.087)
-        self.declare_parameter('base_width', 0.1154)
-        self.declare_parameter('ticks_per_rev', 4320.0)
-        self.declare_parameter('cmd_timeout', 0.5)
-        self.declare_parameter('mecanum_layout', 'X')
-        self.declare_parameter('log_commands', True)
-        self.declare_parameter('odom_hz', 50.0)
-        self.declare_parameter('tf_hz', 30.0)
+        self.declare_parameter("use_sim", False)
+        self.declare_parameter("port", "/dev/ttyUSB0")
+        self.declare_parameter("baud", 115200)
+        self.declare_parameter("wheel_radius", 0.04)
+        self.declare_parameter("base_length", 0.087)
+        self.declare_parameter("base_width", 0.1154)
+        self.declare_parameter("ticks_per_rev", 4320.0)
+        self.declare_parameter("cmd_timeout", 0.5)
+        self.declare_parameter("mecanum_layout", "X")
+        self.declare_parameter("log_commands", True)
+        self.declare_parameter("odom_hz", 50.0)
+        self.declare_parameter("tf_hz", 30.0)
 
         # Read parameters
-        use_sim = bool(self.get_parameter('use_sim').value)
-        port = self.get_parameter('port').value
-        baud = self.get_parameter('baud').value
-        R = float(self.get_parameter('wheel_radius').value)
-        Lx = float(self.get_parameter('base_length').value)
-        Ly = float(self.get_parameter('base_width').value)
-        ticks_per_rev = float(self.get_parameter('ticks_per_rev').value)
-        layout = self.get_parameter('mecanum_layout').value.upper()
-        self._odom_hz = float(self.get_parameter('odom_hz').value)
-        self._tf_hz = float(self.get_parameter('tf_hz').value)
-        self._log_commands = bool(self.get_parameter('log_commands').value)
+        use_sim = bool(self.get_parameter("use_sim").value)
+        port = self.get_parameter("port").value
+        baud = self.get_parameter("baud").value
+        R = float(self.get_parameter("wheel_radius").value)
+        Lx = float(self.get_parameter("base_length").value)
+        Ly = float(self.get_parameter("base_width").value)
+        ticks_per_rev = float(self.get_parameter("ticks_per_rev").value)
+        layout = self.get_parameter("mecanum_layout").value.upper()
+        self._odom_hz = float(self.get_parameter("odom_hz").value)
+        self._tf_hz = float(self.get_parameter("tf_hz").value)
+        self._log_commands = bool(self.get_parameter("log_commands").value)
 
         # ------------------------------------------------------------------
         # QoS Profiles
@@ -66,17 +67,15 @@ class HardwareNode(Node):
         qos_cmd = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
+            depth=1,
         )
         qos_odom = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             history=QoSHistoryPolicy.KEEP_LAST,
-            depth=10
+            depth=10,
         )
         qos_joint = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=10
+            reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=10
         )
 
         # ------------------------------------------------------------------
@@ -84,10 +83,12 @@ class HardwareNode(Node):
         # ------------------------------------------------------------------
         if use_sim:
             from .simulation_interface import SimulationInterface
+
             self.backend = SimulationInterface(ticks_per_rev, R, logger=self.get_logger())
             self.get_logger().info("Running in SIMULATION mode.")
         else:
             from .serial_interface import SerialBridge
+
             self.backend = SerialBridge(port, baud, logger=self.get_logger())
             self.get_logger().info(f"Connected to ESP32 on {port} @ {baud} baud.")
 
@@ -101,14 +102,14 @@ class HardwareNode(Node):
         # ------------------------------------------------------------------
         # ROS interfaces
         # ------------------------------------------------------------------
-        self.cmd_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_cb, qos_cmd)
-        self.joint_pub = self.create_publisher(JointState, '/joint_states', qos_joint)
-        self.odom_pub = self.create_publisher(Odometry, '/odom', qos_odom)
+        self.cmd_sub = self.create_subscription(Twist, "/cmd_vel", self.cmd_cb, qos_cmd)
+        self.joint_pub = self.create_publisher(JointState, "/joint_states", qos_joint)
+        self.odom_pub = self.create_publisher(Odometry, "/odom", qos_odom)
 
         # Internal state
         self._last_cmd = Twist()
         self._last_cmd_time = self.get_clock().now()
-        self._cmd_timeout = float(self.get_parameter('cmd_timeout').value)
+        self._cmd_timeout = float(self.get_parameter("cmd_timeout").value)
         self._last_encoder_ts = None
         self._last_tf_stamp = None
 
@@ -185,8 +186,8 @@ class HardwareNode(Node):
         # --- Odometry message ---
         odom = Odometry()
         odom.header.stamp = stamp
-        odom.header.frame_id = 'odom'
-        odom.child_frame_id = 'base_link'
+        odom.header.frame_id = "odom"
+        odom.child_frame_id = "base_link"
         odom.pose.pose.position.x = x
         odom.pose.pose.position.y = y
         odom.pose.pose.orientation.z = math.sin(yaw / 2.0)
@@ -199,7 +200,7 @@ class HardwareNode(Node):
         # --- JointState message ---
         js = JointState()
         js.header.stamp = stamp
-        js.name = ['wheel_rr', 'wheel_fr', 'wheel_rl', 'wheel_fl']
+        js.name = ["wheel_rr", "wheel_fr", "wheel_rl", "wheel_fl"]
         js.position = self.odom.get_wheel_angles()
         js.velocity = [0.0, 0.0, 0.0, 0.0]
         self.joint_pub.publish(js)
@@ -222,8 +223,8 @@ class HardwareNode(Node):
         x, y, yaw, stamp = self._last_tf_stamp
         t = TransformStamped()
         t.header.stamp = stamp
-        t.header.frame_id = 'odom'
-        t.child_frame_id = 'base_link'
+        t.header.frame_id = "odom"
+        t.child_frame_id = "base_link"
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.rotation.z = math.sin(yaw / 2.0)
@@ -255,5 +256,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
