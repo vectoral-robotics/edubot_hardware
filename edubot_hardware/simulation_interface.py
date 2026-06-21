@@ -16,7 +16,6 @@ OdometryEstimator and HardwareNode to behave identically in simulation.
 
 import math
 import time
-from typing import List, Optional, Tuple
 
 
 class SimulationInterface:
@@ -79,7 +78,7 @@ class SimulationInterface:
         )
 
     # ------------------------------------------------------------------
-    def read_lines(self) -> List[str]:
+    def read_lines(self) -> list[str]:
         """
         Simulate encoder feedback lines with timestamps.
 
@@ -109,10 +108,10 @@ class SimulationInterface:
         self._seq += 1
 
         # integer rounding only when emitting (reduces quantization noise)
-        t_rr = int(round(self._t_rr_f))
-        t_fr = int(round(self._t_fr_f))
-        t_rl = int(round(self._t_rl_f))
-        t_fl = int(round(self._t_fl_f))
+        t_rr = round(self._t_rr_f)
+        t_fr = round(self._t_fr_f)
+        t_rl = round(self._t_rl_f)
+        t_fl = round(self._t_fl_f)
 
         line = f"E {self._seq} {timestamp_us} {t_rr} {t_fr} {t_rl} {t_fl}"
 
@@ -124,7 +123,7 @@ class SimulationInterface:
         return [line]
 
     # ------------------------------------------------------------------
-    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int, int]]:
+    def parse_encoder_line(self, line: str) -> tuple[int, int, int, int, int, int] | None:
         """
         Parse a simulated encoder line.
 

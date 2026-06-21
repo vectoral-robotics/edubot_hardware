@@ -11,7 +11,6 @@ Handles:
 
 import threading
 import time
-from typing import List, Optional, Tuple
 
 import serial
 
@@ -82,7 +81,7 @@ class SerialBridge:
             self._log_warn(f"Serial write error: {e}")
 
     # ------------------------------------------------------------------
-    def read_lines(self) -> List[str]:
+    def read_lines(self) -> list[str]:
         """
         Read all complete lines currently in the serial buffer.
 
@@ -115,7 +114,7 @@ class SerialBridge:
         return lines
 
     # ------------------------------------------------------------------
-    def parse_encoder_line(self, line: str) -> Optional[Tuple[int, int, int, int, int, int]]:
+    def parse_encoder_line(self, line: str) -> tuple[int, int, int, int, int, int] | None:
         """
         Parse an encoder feedback line from the ESP32.
 
