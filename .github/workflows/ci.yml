@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync dev environment
+        run: uv sync
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Tests with coverage
+        run: uv run pytest --cov=edubot_hardware --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  ros-build:
+    name: colcon build & test (Humble)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ROS 2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      # Builds the package in a fresh workspace, resolves rosdep dependencies
+      # (rclpy, python3-serial, …) and runs `colcon test`. This is what verifies
+      # that the rclpy-bound hardware_node actually builds and imports.
+      - name: Build & test with colcon
+        uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          package-name: edubot_hardware
+          target-ros2-distro: humble
+
+  commitlint:
+    name: Conventional commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync dev environment
+        run: uv sync
+
+      - name: Check commit messages
+        run: >
+          uv run cz check
+          --rev-range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
