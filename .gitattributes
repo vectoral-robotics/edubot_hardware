@@ -1,0 +1,12 @@
+# Normalize line endings: store everything with LF in the repo.
+* text=auto eol=lf
+
+# Treat common binary assets as binary (never normalize / diff as text).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.stl  binary
+*.dae  binary
