@@ -25,7 +25,7 @@ setup(
     maintainer="Vectoral",
     maintainer_email="info@vectoral.ch",
     description="ROS 2 hardware and simulation backend for the EduBot robot.",
-    license="Apache-2.0",
+    license="PolyForm-Perimeter-1.0.0",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
