@@ -11,7 +11,6 @@ Compatible with the ESP32-based motor controller using encoder format:
 """
 
 import math
-from typing import List, Optional, Tuple
 
 
 class OdometryEstimator:
@@ -54,8 +53,8 @@ class OdometryEstimator:
 
     # ------------------------------------------------------------------
     def update(
-        self, ticks: Tuple[int, int, int, int], dt: float
-    ) -> Optional[Tuple[float, float, float]]:
+        self, ticks: tuple[int, int, int, int], dt: float
+    ) -> tuple[float, float, float] | None:
         """
         Update odometry from new encoder tick readings.
 
@@ -115,11 +114,11 @@ class OdometryEstimator:
 
         return vx, vy, wz
 
-    def get_pose(self) -> Tuple[float, float, float]:
+    def get_pose(self) -> tuple[float, float, float]:
         """Return current pose (x, y, yaw) in world frame."""
         return self.x, self.y, self.yaw
 
-    def get_wheel_angles(self) -> List[float]:
+    def get_wheel_angles(self) -> list[float]:
         """Return integrated wheel angles [rad] for joint state publishing."""
         return self._wheel_angles
 
