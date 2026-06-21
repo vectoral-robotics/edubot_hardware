@@ -9,3 +9,12 @@ __pycache__/
 
 # ruff cache
 .ruff_cache/
+
+# uv / virtualenv (uv.lock IS committed for reproducibility)
+.venv/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
