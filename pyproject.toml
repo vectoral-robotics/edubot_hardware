@@ -1,0 +1,64 @@
+# edubot_hardware — Python tooling configuration.
+#
+# The ROS 2 build is driven by setup.py (ament_python). This file holds the
+# shared developer tooling: ruff (lint+format), pytest+coverage, commitizen,
+# and the uv-managed dev environment. uv treats this as a non-package project
+# (package = false), so it never conflicts with the ament build.
+
+# --- uv: dev environment ---------------------------------------------------
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "ruff==0.12.0",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "commitizen>=3.29",
+    "pre-commit>=3.8",
+    "pyserial>=3.5",  # runtime dep, needed here so serial_interface is importable in tests
+]
+
+# --- ruff: lint + format ---------------------------------------------------
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade,
+# SIM flake8-simplify, RUF ruff-specific.
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# Line length is enforced by the formatter; E501 only flags long strings/
+# comments the formatter intentionally leaves alone, so don't fail on it.
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# --- pytest + coverage -----------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# Make the package importable from the repo root without installing it.
+pythonpath = ["."]
+# Coverage is NOT enabled here on purpose: `colcon test` / bare pytest on the
+# robot may not have pytest-cov, and unknown args would break the run. Ask for
+# coverage explicitly: `uv run pytest --cov=edubot_hardware --cov-report=term-missing`.
+
+[tool.coverage.run]
+source = ["edubot_hardware"]
+omit = ["edubot_hardware/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+
+# --- commitizen: conventional commits + versioning + changelog -------------
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.1"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = [
+    "setup.py:version",
+    "package.xml:version",
+]
