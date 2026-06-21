@@ -1,8 +1,30 @@
-# Run ruff (lint + format) on commit. Install once with: pre-commit install
+# Pre-commit hooks for edubot_hardware.
+# Install once after cloning (uv provides the tools):
+#   uv run pre-commit install --install-hooks
+#   uv run pre-commit install --hook-type commit-msg
+minimum_pre_commit_version: "3.5.0"
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  # Lint + format (must match the ruff version pinned in pyproject.toml).
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.0
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  # Enforce Conventional Commits on the commit message.
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.16.3
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
