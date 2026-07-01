@@ -48,7 +48,16 @@ class HardwareNode(Node):
         self.declare_parameter("odom_hz", 50.0)
         self.declare_parameter("tf_hz", 30.0)
 
-        # Read parameters
+        # Odometry covariance diagonals. Values are variances (= error^2).
+        # For a mecanum base the sideways (vy) and yaw estimates are less
+        # trustworthy than forward (vx) because the passive rollers slip, so
+        # they get larger variances. Consumers like Nav2 / robot_localization
+        # use these to weight wheel odometry against the lidar; a zero (default)
+        # covariance would wrongly claim perfect certainty.
+        # Pose diagonal: [x, y, z, roll, pitch, yaw]
+        self.declare_parameter("pose_covariance_diagonal", [0.01, 0.05, 1e6, 1e6, 1e6, 0.1])
+        # Twist diagonal: [vx, vy, vz, wx, wy, wz]
+        self.declare_parameter("twist_covariance_diagonal", [0.002, 0.01, 1e6, 1e6, 1e6, 0.02])
         use_sim = bool(self.get_parameter("use_sim").value)
         port = self.get_parameter("port").value
         baud = self.get_parameter("baud").value
@@ -60,6 +69,15 @@ class HardwareNode(Node):
         self._odom_hz = float(self.get_parameter("odom_hz").value)
         self._tf_hz = float(self.get_parameter("tf_hz").value)
         self._log_commands = bool(self.get_parameter("log_commands").value)
+
+        # Pre-build the full 6x6 (36-element, row-major) covariance matrices
+        # once from the configured diagonals; they are constant per run.
+        self._pose_covariance = self._diag_to_covariance(
+            self.get_parameter("pose_covariance_diagonal").value
+        )
+        self._twist_covariance = self._diag_to_covariance(
+            self.get_parameter("twist_covariance_diagonal").value
+        )
 
         # ------------------------------------------------------------------
         # QoS Profiles
@@ -178,6 +196,21 @@ class HardwareNode(Node):
                 self._publish_odometry(vx, vy, wz)
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _diag_to_covariance(diagonal) -> list[float]:
+        """
+        Expand a 6-element variance diagonal into a 36-element (row-major)
+        6x6 covariance matrix as expected by nav_msgs/Odometry.
+        """
+        diag = [float(v) for v in diagonal]
+        if len(diag) != 6:
+            raise ValueError(f"covariance diagonal must have 6 values, got {len(diag)}")
+        cov = [0.0] * 36
+        for i in range(6):
+            cov[i * 6 + i] = diag[i]
+        return cov
+
+    # ------------------------------------------------------------------
     def _publish_odometry(self, vx: float, vy: float, wz: float):
         """Publish Odometry and JointState messages."""
         x, y, yaw = self.odom.get_pose()
@@ -195,6 +228,8 @@ class HardwareNode(Node):
         odom.twist.twist.linear.x = vx
         odom.twist.twist.linear.y = vy
         odom.twist.twist.angular.z = wz
+        odom.pose.covariance = self._pose_covariance
+        odom.twist.covariance = self._twist_covariance
         self.odom_pub.publish(odom)
 
         # --- JointState message ---
