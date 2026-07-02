@@ -79,7 +79,9 @@ uv run pytest --cov=edubot_hardware --cov-report=term-missing   # with coverage
 ## Versioning & releases
 
 `commitizen` derives the next version from the commit history and bumps it in
-both `package.xml` and `setup.py`, and updates `CHANGELOG.md`:
+`package.xml`, `setup.py` and `edubot_hardware/__init__.py` (`__version__`), and
+updates `CHANGELOG.md`. On merge to `main` this runs automatically
+(`.github/workflows/release.yml`); `uv run cz bump` is only for a manual release:
 
 ```bash
 uv run cz bump            # creates the version tag + changelog at release time
