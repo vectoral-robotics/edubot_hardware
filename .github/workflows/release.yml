@@ -54,7 +54,9 @@ jobs:
       - name: Bump version if warranted
         run: |
           code=0
-          uvx --from commitizen@4.16.3 cz bump --yes || code=$?
+          # --annotated-tag so `git push --follow-tags` actually publishes the
+          # tag (a lightweight tag would be created but never pushed).
+          uvx --from commitizen@4.16.3 cz bump --yes --annotated-tag || code=$?
           if [ "$code" -eq 21 ]; then
             echo "No eligible commits since the last tag — nothing to bump."
             exit 0
