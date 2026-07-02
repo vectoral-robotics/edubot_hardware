@@ -61,4 +61,5 @@ update_changelog_on_bump = true
 version_files = [
     "setup.py:version",
     "package.xml:version",
+    "edubot_hardware/__init__.py:__version__",
 ]
