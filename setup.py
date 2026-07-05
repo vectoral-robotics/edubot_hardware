@@ -30,6 +30,7 @@ setup(
     entry_points={
         "console_scripts": [
             "hardware_node = edubot_hardware.hardware_node:main",
+            "led_node = edubot_hardware.led_node:main",
         ],
     },
 )
