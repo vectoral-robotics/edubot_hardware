@@ -48,6 +48,35 @@ def clamp_color(r: float, g: float, b: float) -> Color:
     return (clamp8(r), clamp8(g), clamp8(b))
 
 
+def breathing_level(elapsed: float, period: float, gamma: float = 2.2) -> float:
+    """
+    Smooth 0..1 "breathing" level for a boot animation.
+
+    A raised cosine gives a seamless fade with no hard edges: 0 at ``elapsed``
+    0, 1 at half a period, back to 0 at a full period. The gamma exponent
+    (>1) makes the light linger at the dim end and rise briskly through the
+    top, which reads as a calm, modern breath rather than a mechanical
+    triangle wave.
+
+    Args:
+        elapsed: seconds since the animation started.
+        period:  full breath duration [s] (dim -> bright -> dim).
+        gamma:   easing exponent; 1.0 = plain cosine, higher = dwell darker.
+    """
+    import math
+
+    if period <= 0.0:
+        return 0.0
+    raw = (1.0 - math.cos(2.0 * math.pi * (elapsed / period))) / 2.0
+    return raw**gamma
+
+
+def scale_color(color: Color, level: float) -> Color:
+    """Scale an RGB byte tuple by a 0..1 brightness level (clamped)."""
+    level = max(0.0, min(1.0, level))
+    return (clamp8(color[0] * level), clamp8(color[1] * level), clamp8(color[2] * level))
+
+
 # ----------------------------------------------------------------------------
 # Backends
 # ----------------------------------------------------------------------------
