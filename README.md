@@ -17,6 +17,8 @@ The package is intentionally split into small, testable pieces:
 - `odometry.py` — encoder-tick → pose/velocity integration
 - `serial_interface.py` — serial bridge to the ESP32
 - `simulation_interface.py` — protocol-compatible simulator
+- `led_node.py` — corner status LEDs (NeoPixel/WS2812B over SPI)
+- `led_interface.py` — LED backends (real SPI + null) and colour helpers
 
 ## Installation
 
@@ -56,6 +58,76 @@ ros2 run edubot_hardware hardware_node --ros-args -p use_sim:=true
 **Key parameters:** `use_sim`, `port`, `baud`, `wheel_radius`, `base_length`,
 `base_width`, `ticks_per_rev`, `cmd_timeout`, `mecanum_layout` (`X`/`O`),
 `odom_hz`, `tf_hz`. See `hardware_node.py` for defaults.
+
+## Corner LEDs (NeoPixel / WS2812B)
+
+One addressable RGB LED per corner, chained on a single data line and driven
+from the Raspberry Pi 5 over **SPI** (not the ESP32). SPI is used because the
+PIO path of `adafruit-circuitpython-neopixel` fails on the Pi 5 / Ubuntu 24.04
+(`Failed to open PIO device`, no `/dev/pio0`).
+
+**Wiring** (single data line for the whole chain):
+
+| NeoPixel | Raspberry Pi 5 |
+|---|---|
+| DIN | GPIO10 / MOSI (pin 19) |
+| 5V  | pin 2 |
+| GND | pin 6 |
+
+Chain: `MOSI → DIN(LED0)`, `DOUT(LED0) → DIN(LED1)`, … one line, N LEDs.
+
+**Run it:**
+
+```bash
+# Real hardware (needs SPI enabled — see below)
+ros2 run edubot_hardware led_node
+
+# No hardware (dev laptop / sim): uses a logging null backend
+ros2 run edubot_hardware led_node --ros-args -p use_sim:=true
+```
+
+The node also falls back to the null backend automatically if the SPI device or
+the adafruit library is missing, so it never brings the stack down.
+
+**Interfaces** — one topic per corner plus an `all` topic, each a plain
+`std_msgs/ColorRGBA` with **r/g/b in 0–255** (not the 0–1 RViz convention).
+
+| Topic | Type | Sets |
+|---|---|---|
+| `/led/front_left` | `std_msgs/ColorRGBA` | the front-left corner |
+| `/led/front_right` | `std_msgs/ColorRGBA` | the front-right corner |
+| `/led/rear_left` | `std_msgs/ColorRGBA` | the rear-left corner |
+| `/led/rear_right` | `std_msgs/ColorRGBA` | the rear-right corner |
+| `/led/all` | `std_msgs/ColorRGBA` | all corners at once |
+
+Values are clamped to 0–255, so an out-of-range publish can't crash the node.
+
+```bash
+# One corner red
+ros2 topic pub -1 /led/front_left std_msgs/ColorRGBA "{r: 255, g: 0, b: 0}"
+
+# All corners white
+ros2 topic pub -1 /led/all std_msgs/ColorRGBA "{r: 255, g: 255, b: 255}"
+```
+
+**Key parameters:** `use_sim`, `num_pixels` (4), `brightness` (0.4),
+`pixel_order` (`GRB`), `corner_names` (topic suffix per corner),
+`startup_color` (`[r, g, b]` 0–255), `clear_on_shutdown`. Corner index follows
+the physical chain (pixel 0 = first LED after MOSI).
+
+**Enable SPI (once per robot).** `/dev/spidev0.0` must exist. Use the helper in
+the meta-repo, then reboot:
+
+```bash
+make enable-spi     # adds 'dtparam=spi=on' to /boot/firmware/config.txt
+sudo reboot
+ls /dev/spidev0.0   # verify
+```
+
+In the fleet stack the `edubot` container runs privileged with `/dev` mapped in,
+so it accesses `/dev/spidev0.0` directly — no extra device flags needed. The
+Python dependency (`adafruit-circuitpython-neopixel-spi`) is baked into the ROS
+image. Enable/disable the node per robot via `ENABLE_LEDS` (default `true`).
 
 ## Contributing
 
