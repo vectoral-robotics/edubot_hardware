@@ -6,15 +6,20 @@ Drives one addressable RGB pixel per robot corner from the Raspberry Pi 5 over
 SPI. See ``led_interface`` for the wiring and the reason SPI is used instead of
 the PIO path on the Pi 5.
 
-The topic layout is deliberately student-friendly: one topic per corner plus an
-``all`` topic, each a plain ``std_msgs/ColorRGBA`` with r/g/b in **0..255**
-(not the 0..1 RViz convention). Setting a corner reads almost like a sentence::
+Boot animation is handled *before* Docker/ROS by the host-level systemd service
+``edubot-leds-boot`` (scripts/boot-leds.py). That service breathes the pixels
+in cool white from power-on until run.sh signals it to stop (by creating
+/dev/edubot-leds-stop). This node then starts with a steady ``startup_color``
+(default: same cool white) to indicate the ROS stack is fully up.
+
+Topic layout is deliberately student-friendly — one topic per corner plus an
+``all`` topic, each a plain ``std_msgs/ColorRGBA`` with r/g/b in **0..255**::
 
     ros2 topic pub /led/front_left std_msgs/ColorRGBA "{r: 255, g: 0, b: 0}"
 
 Topics (subscriptions), with the default (empty) namespace:
   - ``/led/front_left``, ``/led/front_right``, ``/led/rear_left``,
-    ``/led/rear_right`` -- set that one corner (names come from ``corner_names``).
+    ``/led/rear_right`` -- set that one corner (names from ``corner_names``).
   - ``/led/all`` -- set every corner to the same colour.
 
 Values are clamped to 0..255, so an out-of-range publish can never crash the
@@ -46,8 +51,9 @@ class LedNode(Node):
         self.declare_parameter(
             "corner_names", ["front_left", "front_right", "rear_left", "rear_right"]
         )
-        # Colour applied on startup as [r, g, b] in 0..255. All zeros = off.
-        self.declare_parameter("startup_color", [0, 0, 0])
+        # Colour applied on startup as [r, g, b] in 0..255.
+        # Matches the boot animation colour so the transition is seamless.
+        self.declare_parameter("startup_color", [200, 225, 255])
         self.declare_parameter("clear_on_shutdown", True)
 
         use_sim = bool(self.get_parameter("use_sim").value)
@@ -57,8 +63,7 @@ class LedNode(Node):
         self._corner_names = list(self.get_parameter("corner_names").value)
         self._clear_on_shutdown = bool(self.get_parameter("clear_on_shutdown").value)
 
-        # One corner name per pixel. If they disagree, trust num_pixels and pad
-        # or trim the names so the mapping below is always well defined.
+        # One corner name per pixel. If they disagree, trust num_pixels.
         if len(self._corner_names) != self._num_pixels:
             self.get_logger().warn(
                 f"corner_names has {len(self._corner_names)} entries but num_pixels="
@@ -68,14 +73,12 @@ class LedNode(Node):
                 self._corner_names + [f"corner_{i}" for i in range(self._num_pixels)]
             )[: self._num_pixels]
 
-        # Current colour of every pixel; the node owns this state and pushes the
-        # full array to the backend on each change.
+        # Current colour of every pixel; the node owns this state.
         self._colors = [(0, 0, 0)] * self._num_pixels
 
         # ------------------------------------------------------------------
         # Backend selection (real SPI <-> null), mirroring the motor path.
-        # Fall back to the null backend if hardware / library is unavailable
-        # so the node never brings the stack down on a dev laptop or in sim.
+        # Falls back gracefully if hardware / library is unavailable.
         # ------------------------------------------------------------------
         self.backend = self._make_backend(use_sim, brightness, pixel_order)
 
@@ -91,8 +94,6 @@ class LedNode(Node):
         )
         self._subs = []
         for index, name in enumerate(self._corner_names):
-            # Absolute names so they resolve to /led/<corner> regardless of the
-            # node name (intuitive for students and the web dashboard).
             self._subs.append(
                 self.create_subscription(
                     ColorRGBA,
@@ -103,9 +104,9 @@ class LedNode(Node):
             )
         self._subs.append(self.create_subscription(ColorRGBA, "/led/all", self._all_cb, qos))
 
-        # Apply the configured startup colour to every corner.
+        # Light up the startup colour — seamless visual handoff from boot animation.
         startup = list(self.get_parameter("startup_color").value)
-        if len(startup) == 3 and any(startup):
+        if len(startup) == 3:
             self._set_all(clamp_color(*startup))
 
         self.get_logger().info(
