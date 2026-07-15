@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>edubot_hardware</name>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
   <description>
     ROS 2 hardware interface and simulation backend for the EduBot robot.
     Provides a serial bridge for the ESP32 controller and a physics-free simulation
