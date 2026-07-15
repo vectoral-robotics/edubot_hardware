@@ -110,25 +110,22 @@ ros2 topic pub -1 /led/front_left std_msgs/ColorRGBA "{r: 255, g: 0, b: 0}"
 ros2 topic pub -1 /led/all std_msgs/ColorRGBA "{r: 255, g: 255, b: 255}"
 ```
 
-**Boot animation → ready.** On start-up all four corners gently *breathe* in a
-neutral cool white. When the robot becomes usable — the fleet `run.sh` waits for
-the dashboard port, then latches `/robot_ready` (`std_msgs/Bool`, `true`) — the
-LEDs smoothly fade to a **steady** glow. Publishing `false` returns them to
-breathing. The first manual `/led/...` command takes over and stops the
-animation entirely. To drive readiness yourself:
-
-```bash
-ros2 topic pub -1 /robot_ready std_msgs/Bool "{data: true}" \
-  --qos-durability transient_local
-```
+**Boot animation → ready.** The breathing boot animation is **not** part of this
+node — it is a host-level systemd service (`edubot-leds-boot`, installed from the
+meta-repo via `make install-boot-leds`) that gently pulses all four corners in
+cool white from power-on, well before Docker/ROS. When the ROS container starts,
+`run.sh` creates `/dev/edubot-leds-stop`; the boot service clears the pixels and
+releases the SPI bus, and `led_node` then lights a **steady** `startup_color`
+(the same cool white by default) so the handoff is visually seamless. From then
+on the corners follow whatever you publish to the `led/…` topics.
 
 **Key parameters:** `use_sim`, `num_pixels` (4), `brightness` (0.4),
 `pixel_order` (`GRB`), `corner_names` (topic suffix per corner),
-`startup_color` (`[r, g, b]` 0–255), `clear_on_shutdown`. Boot animation:
-`boot_animation` (true), `breath_color` (`[200, 225, 255]` cool white),
-`breath_period` (4.0 s), `breath_min` (0.1), `animation_hz` (30),
-`ready_fade` (1.2 s). Corner index follows the physical chain
-(pixel 0 = first LED after MOSI).
+`startup_color` (`[r, g, b]` 0–255, default `[200, 225, 255]`),
+`clear_on_shutdown` (true). Corner index follows the physical chain
+(pixel 0 = first LED after MOSI). The boot animation is configured separately
+via environment variables on the host service — see `scripts/boot-leds.py` in
+the meta-repo.
 
 **Enable SPI (once per robot).** `/dev/spidev0.0` must exist. Use the helper in
 the meta-repo, then reboot:
