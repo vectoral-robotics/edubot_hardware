@@ -17,10 +17,12 @@ Topic layout is deliberately student-friendly — one topic per corner plus an
 
     ros2 topic pub /led/front_left std_msgs/ColorRGBA "{r: 255, g: 0, b: 0}"
 
-Topics (subscriptions), with the default (empty) namespace:
-  - ``/led/front_left``, ``/led/front_right``, ``/led/rear_left``,
-    ``/led/rear_right`` -- set that one corner (names from ``corner_names``).
-  - ``/led/all`` -- set every corner to the same colour.
+Topic names are relative, so they honour the node's namespace. With the default
+(empty) namespace they resolve as below; under namespace ``robot1`` they become
+``/robot1/led/front_left`` and so on.
+  - ``led/front_left``, ``led/front_right``, ``led/rear_left``,
+    ``led/rear_right`` -- set that one corner (names from ``corner_names``).
+  - ``led/all`` -- set every corner to the same colour.
 
 Values are clamped to 0..255, so an out-of-range publish can never crash the
 node. Corner order follows the physical chain (pixel 0 = first LED after MOSI).
@@ -85,24 +87,28 @@ class LedNode(Node):
         # ------------------------------------------------------------------
         # ROS interfaces: one topic per corner + an "all" topic.
         # ------------------------------------------------------------------
-        # Latched-style QoS: a late-joining publisher still gets the last set.
+        # Latched-style QoS: a late-joining subscriber still receives the last
+        # colour a TRANSIENT_LOCAL publisher sent before it joined.
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )
+        # Relative topic names ("led/<corner>", no leading slash) so the node
+        # honours its namespace: empty ns -> /led/front_left, ns "robot1" ->
+        # /robot1/led/front_left.
         self._subs = []
         for index, name in enumerate(self._corner_names):
             self._subs.append(
                 self.create_subscription(
                     ColorRGBA,
-                    f"/led/{name}",
+                    f"led/{name}",
                     self._make_corner_cb(index),
                     qos,
                 )
             )
-        self._subs.append(self.create_subscription(ColorRGBA, "/led/all", self._all_cb, qos))
+        self._subs.append(self.create_subscription(ColorRGBA, "led/all", self._all_cb, qos))
 
         # Light up the startup colour — seamless visual handoff from boot animation.
         startup = list(self.get_parameter("startup_color").value)
@@ -111,7 +117,7 @@ class LedNode(Node):
 
         self.get_logger().info(
             f"LED Node ready: {self._num_pixels} corners "
-            f"({', '.join(f'/led/{n}' for n in self._corner_names)}, /led/all)"
+            f"({', '.join(f'led/{n}' for n in self._corner_names)}, led/all)"
         )
 
     # ------------------------------------------------------------------
@@ -158,13 +164,13 @@ class LedNode(Node):
         self.backend.set_pixels(self._colors)
 
     # ------------------------------------------------------------------
-    def destroy_node(self) -> bool:
+    def destroy_node(self) -> None:
         if self._clear_on_shutdown:
             try:
                 self.backend.clear()
             except Exception as e:  # best effort on shutdown
                 self.get_logger().warn(f"Failed to clear LEDs on shutdown: {e}")
-        return super().destroy_node()
+        super().destroy_node()
 
 
 def main(args=None):
