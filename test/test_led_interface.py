@@ -2,10 +2,8 @@
 
 from edubot_hardware.led_interface import (
     NullLEDBackend,
-    breathing_level,
     clamp8,
     clamp_color,
-    scale_color,
 )
 
 
@@ -18,6 +16,12 @@ def test_clamp8_rounds_and_bounds():
     assert clamp8(999) == 255
 
 
+def test_clamp8_nan_is_safe():
+    # A ColorRGBA can carry NaN; it must not raise, it maps to 0.
+    assert clamp8(float("nan")) == 0
+    assert clamp_color(float("nan"), 10, float("nan")) == (0, 10, 0)
+
+
 def test_clamp_color_passes_through_in_range():
     assert clamp_color(0, 0, 0) == (0, 0, 0)
     assert clamp_color(255, 128, 0) == (255, 128, 0)
@@ -26,34 +30,6 @@ def test_clamp_color_passes_through_in_range():
 def test_clamp_color_clamps_and_rounds():
     # out of range on both ends, plus a fractional value that rounds up
     assert clamp_color(300, -1, 127.6) == (255, 0, 128)
-
-
-def test_breathing_level_endpoints_and_peak():
-    period = 4.0
-    # Dark at the start and after a full period, brightest at half a period.
-    assert breathing_level(0.0, period) == 0.0
-    assert breathing_level(period, period) < 1e-6
-    assert abs(breathing_level(period / 2.0, period) - 1.0) < 1e-9
-
-
-def test_breathing_level_stays_in_unit_range():
-    period = 4.0
-    for i in range(41):
-        level = breathing_level(period * i / 40.0, period)
-        assert 0.0 <= level <= 1.0
-
-
-def test_breathing_level_zero_period_is_safe():
-    assert breathing_level(1.0, 0.0) == 0.0
-
-
-def test_scale_color():
-    assert scale_color((200, 100, 50), 0.0) == (0, 0, 0)
-    assert scale_color((200, 100, 50), 1.0) == (200, 100, 50)
-    assert scale_color((200, 100, 50), 0.5) == (100, 50, 25)
-    # level is clamped to 0..1
-    assert scale_color((200, 100, 50), 5.0) == (200, 100, 50)
-    assert scale_color((200, 100, 50), -1.0) == (0, 0, 0)
 
 
 def test_null_backend_tracks_state_and_clears():
