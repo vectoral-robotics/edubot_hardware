@@ -39,7 +39,15 @@ Color = tuple[int, int, int]
 # intuitive for the students this robot targets). Out-of-range values are
 # clamped rather than rejected so a beginner can never crash the node.
 def clamp8(value: float) -> int:
-    """Clamp a number to a single 0..255 byte (rounded)."""
+    """Clamp a number to a single 0..255 byte (rounded); NaN maps to 0.
+
+    A ``std_msgs/ColorRGBA`` carries plain floats, so a publisher can send NaN.
+    ``round(nan)`` raises, which would otherwise take down the subscription
+    callback — guard it so an out-of-range *or* non-finite value can never
+    crash the node.
+    """
+    if value != value:  # NaN is the only value not equal to itself
+        return 0
     return max(0, min(255, round(value)))
 
 
@@ -48,39 +56,28 @@ def clamp_color(r: float, g: float, b: float) -> Color:
     return (clamp8(r), clamp8(g), clamp8(b))
 
 
-def breathing_level(elapsed: float, period: float, gamma: float = 2.2) -> float:
-    """
-    Smooth 0..1 "breathing" level for a boot animation.
-
-    A raised cosine gives a seamless fade with no hard edges: 0 at ``elapsed``
-    0, 1 at half a period, back to 0 at a full period. The gamma exponent
-    (>1) makes the light linger at the dim end and rise briskly through the
-    top, which reads as a calm, modern breath rather than a mechanical
-    triangle wave.
-
-    Args:
-        elapsed: seconds since the animation started.
-        period:  full breath duration [s] (dim -> bright -> dim).
-        gamma:   easing exponent; 1.0 = plain cosine, higher = dwell darker.
-    """
-    import math
-
-    if period <= 0.0:
-        return 0.0
-    raw = (1.0 - math.cos(2.0 * math.pi * (elapsed / period))) / 2.0
-    return raw**gamma
-
-
-def scale_color(color: Color, level: float) -> Color:
-    """Scale an RGB byte tuple by a 0..1 brightness level (clamped)."""
-    level = max(0.0, min(1.0, level))
-    return (clamp8(color[0] * level), clamp8(color[1] * level), clamp8(color[2] * level))
-
-
 # ----------------------------------------------------------------------------
 # Backends
 # ----------------------------------------------------------------------------
-class NullLEDBackend:
+class _LEDBackend:
+    """Shared logging helpers for the LED backends.
+
+    Both backends log through an optional ROS logger (``None`` off-robot), so
+    the guarded helpers live here instead of being duplicated per backend.
+    """
+
+    logger = None
+
+    def _log_info(self, msg: str) -> None:
+        if self.logger:
+            self.logger.info(msg)
+
+    def _log_debug(self, msg: str) -> None:
+        if self.logger:
+            self.logger.debug(msg)
+
+
+class NullLEDBackend(_LEDBackend):
     """
     Hardware-free LED backend. Used in simulation, on a dev laptop, or as a
     graceful fallback when the SPI device / adafruit library is unavailable.
@@ -108,16 +105,8 @@ class NullLEDBackend:
     def state(self) -> list[Color]:
         return list(self._state)
 
-    def _log_info(self, msg: str) -> None:
-        if self.logger:
-            self.logger.info(msg)
 
-    def _log_debug(self, msg: str) -> None:
-        if self.logger:
-            self.logger.debug(msg)
-
-
-class NeoPixelSPIBackend:
+class NeoPixelSPIBackend(_LEDBackend):
     """
     Real NeoPixel backend driving a WS2812B chain over SPI (MOSI / GPIO10).
 
@@ -165,7 +154,3 @@ class NeoPixelSPIBackend:
     def clear(self) -> None:
         self._pixels.fill((0, 0, 0))
         self._pixels.show()
-
-    def _log_info(self, msg: str) -> None:
-        if self.logger:
-            self.logger.info(msg)
