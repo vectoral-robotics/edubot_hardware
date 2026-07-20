@@ -1,3 +1,9 @@
+## v0.3.0 (2026-07-20)
+
+### Feat
+
+- **imu**: add BNO085 IMU node publishing sensor_msgs/Imu on imu/data
+
 ## v0.2.0 (2026-07-15)
 
 ### Feat
