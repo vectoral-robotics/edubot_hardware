@@ -31,6 +31,7 @@ setup(
         "console_scripts": [
             "hardware_node = edubot_hardware.hardware_node:main",
             "led_node = edubot_hardware.led_node:main",
+            "imu_node = edubot_hardware.imu_node:main",
         ],
     },
 )
