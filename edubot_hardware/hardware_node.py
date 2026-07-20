@@ -47,6 +47,10 @@ class HardwareNode(Node):
         self.declare_parameter("log_commands", True)
         self.declare_parameter("odom_hz", 50.0)
         self.declare_parameter("tf_hz", 30.0)
+        # Whether this node broadcasts the odom -> base_link TF itself. Set to
+        # false when a sensor-fusion node (robot_localization EKF) owns that
+        # transform instead; two publishers for the same TF corrupt the tree.
+        self.declare_parameter("publish_tf", True)
 
         # Odometry covariance diagonals. Values are variances (= error^2).
         # For a mecanum base the sideways (vy) and yaw estimates are less
@@ -69,6 +73,7 @@ class HardwareNode(Node):
         self._odom_hz = float(self.get_parameter("odom_hz").value)
         self._tf_hz = float(self.get_parameter("tf_hz").value)
         self._log_commands = bool(self.get_parameter("log_commands").value)
+        self._publish_tf = bool(self.get_parameter("publish_tf").value)
 
         # Pre-build the full 6x6 (36-element, row-major) covariance matrices
         # once from the configured diagonals; they are constant per run.
@@ -133,7 +138,12 @@ class HardwareNode(Node):
 
         # Timers
         self.create_timer(1.0 / self._odom_hz, self._update_loop)
-        self.create_timer(1.0 / self._tf_hz, self._publish_tf)
+        # Only broadcast the odom -> base_link TF when no EKF owns it.
+        if self._publish_tf:
+            self.create_timer(1.0 / self._tf_hz, self._publish_tf_cb)
+            self.get_logger().info("Publishing odom -> base_link TF.")
+        else:
+            self.get_logger().info("publish_tf=false: leaving odom -> base_link TF to the EKF.")
 
         self.get_logger().info("ESP32 HardwareNode initialized successfully.")
 
@@ -250,8 +260,8 @@ class HardwareNode(Node):
             )
 
     # ------------------------------------------------------------------
-    def _publish_tf(self):
-        """Publish TF transform."""
+    def _publish_tf_cb(self):
+        """Broadcast the odom -> base_link transform (only when publish_tf)."""
         if self._last_tf_stamp is None:
             return
 
