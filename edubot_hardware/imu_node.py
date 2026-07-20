@@ -32,15 +32,12 @@ Parameters (all optional):
   ~use_sim         bool  false  if true → publish zeroed messages (no hardware)
 """
 
-import math
-
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Imu
 
-
-# Covariance diagonals for the BNO085 (row-major 3×3, zeros off-diagonal).
+# Covariance diagonals for the BNO085 (row-major 3x3, zeros off-diagonal).
 # Orientation: ~1° = 0.017 rad → variance ~3e-4 rad²
 # Gyroscope:   ~0.005 rad/s noise → variance ~2.5e-5 (rad/s)²
 # Linear accel: ~0.05 m/s² noise → variance ~2.5e-3 (m/s²)²
@@ -113,14 +110,14 @@ class ImuNode(Node):
     def _init_bno(self):
         """Initialise the BNO085 over I2C; returns the driver or None on failure."""
         try:
-            import board  # noqa: PLC0415
-            import busio  # noqa: PLC0415
-            from adafruit_bno08x import (  # noqa: PLC0415
+            import board
+            import busio
+            from adafruit_bno08x import (
                 BNO_REPORT_GYROSCOPE,
                 BNO_REPORT_LINEAR_ACCELERATION,
                 BNO_REPORT_ROTATION_VECTOR,
             )
-            from adafruit_bno08x.i2c import BNO08X_I2C  # noqa: PLC0415
+            from adafruit_bno08x.i2c import BNO08X_I2C
         except ImportError as exc:
             self.get_logger().error(
                 f"IMU library unavailable ({exc}). "
@@ -138,9 +135,7 @@ class ImuNode(Node):
             self._BNO_REPORT_ROTATION_VECTOR = BNO_REPORT_ROTATION_VECTOR
             self._BNO_REPORT_GYROSCOPE = BNO_REPORT_GYROSCOPE
             self._BNO_REPORT_LINEAR_ACCELERATION = BNO_REPORT_LINEAR_ACCELERATION
-            self.get_logger().info(
-                f"BNO085 found at I2C address 0x{self._i2c_address:02X}."
-            )
+            self.get_logger().info(f"BNO085 found at I2C address 0x{self._i2c_address:02X}.")
             return bno
         except Exception as exc:
             self.get_logger().error(
