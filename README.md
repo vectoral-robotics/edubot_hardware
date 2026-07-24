@@ -19,6 +19,7 @@ The package is intentionally split into small, testable pieces:
 - `simulation_interface.py` — protocol-compatible simulator
 - `led_node.py` — corner status LEDs (NeoPixel/WS2812B over SPI)
 - `led_interface.py` — LED backends (real SPI + null) and colour helpers
+- `speaker_node.py` — speaker bridge that turns text and volume topics into local speech
 
 ## Installation
 
@@ -58,6 +59,28 @@ ros2 run edubot_hardware hardware_node --ros-args -p use_sim:=true
 **Key parameters:** `use_sim`, `port`, `baud`, `wheel_radius`, `base_length`,
 `base_width`, `ticks_per_rev`, `cmd_timeout`, `mecanum_layout` (`X`/`O`),
 `odom_hz`, `tf_hz`. See `hardware_node.py` for defaults.
+
+## Speaker bridge
+
+The speaker bridge is intentionally simple so Blockly and the dashboard can
+publish to it without a custom message package or a rebuild.
+
+**Interfaces**
+
+| Direction | Topic | Type | Meaning |
+|---|---|---|---|
+| Subscribe | `/speaker/text` | `std_msgs/String` | text to speak |
+| Subscribe | `/speaker/volume` | `std_msgs/UInt8` | volume in 0..100 |
+
+Example publishes:
+
+```bash
+ros2 topic pub -1 /speaker/volume std_msgs/UInt8 "{data: 70}"
+ros2 topic pub -1 /speaker/text std_msgs/String "{data: 'Hallo EduBot'}"
+```
+
+The node looks for `espeak-ng` first and falls back to `espeak`. It keeps the
+latest volume in memory and applies it to the next spoken phrase.
 
 ## Corner LEDs (NeoPixel / WS2812B)
 
