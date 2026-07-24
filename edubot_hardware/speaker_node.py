@@ -31,9 +31,12 @@ class SpeakerNode(Node):
         self.get_logger().info("EduBot Speaker Node starting up...")
 
         self.declare_parameter("default_volume", 80)
+        self.declare_parameter("alsa_device", "plughw:CARD=sndrpigooglevoi,DEV=0")
         self._default_volume = self._clamp_volume(int(self.get_parameter("default_volume").value))
         self._volume = self._default_volume
+        self._alsa_device = str(self.get_parameter("alsa_device").value)
         self._backend = self._find_backend()
+        self._aplay = shutil.which("aplay")
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
@@ -46,7 +49,8 @@ class SpeakerNode(Node):
         backend_name = self._backend if self._backend else "none"
         self.get_logger().info(
             f"Speaker Node ready: listening on speaker/text and speaker/volume "
-            f"(backend={backend_name}, default_volume={self._default_volume})"
+            f"(backend={backend_name}, aplay={'yes' if self._aplay else 'no'}, "
+            f"alsa_device={self._alsa_device}, default_volume={self._default_volume})"
         )
 
     def _find_backend(self) -> str | None:
@@ -76,20 +80,32 @@ class SpeakerNode(Node):
             self.get_logger().error(f"Failed to speak text: {exc}")
 
     def _speak(self, executable: str, text: str, volume: int) -> None:
-        # Use a temp file to avoid shell quoting issues and keep longer phrases reliable.
+        # espeak-ng's own ALSA output uses the default device (dmix), which
+        # is not configured on the robot's I2S sound card and fails with
+        # "unable to open slave". Render to a WAV file instead and play it
+        # explicitly on the known-good ALSA device via aplay.
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
-            temp_path = Path(handle.name)
+            text_path = Path(handle.name)
             handle.write(text)
 
+        wav_path = text_path.with_suffix(".wav")
         try:
-            command = [executable, "-a", str(volume), "-f", str(temp_path)]
             self.get_logger().info(f"Speaking at volume {volume}: {text}")
-            subprocess.run(command, check=True)
+            subprocess.run(
+                [executable, "-a", str(volume), "-f", str(text_path), "-w", str(wav_path)],
+                check=True,
+            )
+
+            if self._aplay:
+                subprocess.run([self._aplay, "-D", self._alsa_device, str(wav_path)], check=True)
+            else:
+                self.get_logger().error("aplay not found; cannot play synthesized speech.")
         finally:
-            try:
-                temp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            for path in (text_path, wav_path):
+                try:
+                    path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
 
 def main(args=None):
