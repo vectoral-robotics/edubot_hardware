@@ -1,3 +1,13 @@
+## v0.4.0 (2026-07-24)
+
+### Feat
+
+- **speaker**: add speaker bridge node with text/volume topics
+
+### Fix
+
+- **speaker**: play synthesized speech via aplay on the I2S sound card
+
 ## v0.3.0 (2026-07-20)
 
 ### Feat
