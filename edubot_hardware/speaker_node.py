@@ -6,21 +6,24 @@ Blockly and the web dashboard can publish plain ROS topics to this node:
   - ``speaker/text``   — ``std_msgs/String`` with the text to speak
   - ``speaker/volume`` — ``std_msgs/UInt8`` with a 0..100 volume value
 
-The node runs on the robot and uses a local TTS backend so the web side stays
-simple and does not need a custom message package.
+The node is a thin ROS wrapper; the synthesis and playback live in
+``speaker_interface`` (Piper neural TTS, with a hardware-free fallback), which
+is unit tested without ROS.
 """
 
 from __future__ import annotations
-
-import subprocess
-import tempfile
-from pathlib import Path
-import shutil
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String, UInt8
+
+from edubot_hardware.speaker_interface import (
+    NullTTSBackend,
+    PiperTTSBackend,
+    TTSUnavailable,
+    clamp_volume,
+)
 
 
 class SpeakerNode(Node):
@@ -32,11 +35,15 @@ class SpeakerNode(Node):
 
         self.declare_parameter("default_volume", 80)
         self.declare_parameter("alsa_device", "plughw:CARD=sndrpigooglevoi,DEV=0")
-        self._default_volume = self._clamp_volume(int(self.get_parameter("default_volume").value))
-        self._volume = self._default_volume
-        self._alsa_device = str(self.get_parameter("alsa_device").value)
-        self._backend = self._find_backend()
-        self._aplay = shutil.which("aplay")
+        # Absolute path to a Piper voice model (.onnx). The matching
+        # <model>.onnx.json must sit next to it. Empty -> no audio (Null backend).
+        self.declare_parameter("voice_model", "")
+
+        self._volume = clamp_volume(int(self.get_parameter("default_volume").value))
+        alsa_device = str(self.get_parameter("alsa_device").value)
+        voice_model = str(self.get_parameter("voice_model").value).strip()
+
+        self._tts = self._build_backend(voice_model, alsa_device)
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
@@ -46,66 +53,31 @@ class SpeakerNode(Node):
         self._text_sub = self.create_subscription(String, "speaker/text", self._on_text, qos)
         self._volume_sub = self.create_subscription(UInt8, "speaker/volume", self._on_volume, qos)
 
-        backend_name = self._backend if self._backend else "none"
         self.get_logger().info(
-            f"Speaker Node ready: listening on speaker/text and speaker/volume "
-            f"(backend={backend_name}, aplay={'yes' if self._aplay else 'no'}, "
-            f"alsa_device={self._alsa_device}, default_volume={self._default_volume})"
+            "Speaker Node ready: listening on speaker/text and speaker/volume "
+            f"(default_volume={self._volume})"
         )
 
-    def _find_backend(self) -> str | None:
-        for executable in ("espeak-ng", "espeak"):
-            if shutil.which(executable):
-                return executable
-        return None
-
-    def _clamp_volume(self, volume: int) -> int:
-        return max(0, min(100, int(volume)))
+    def _build_backend(self, voice_model: str, alsa_device: str):
+        """Use Piper when available; otherwise degrade to a logging-only backend."""
+        try:
+            return PiperTTSBackend(voice_model, alsa_device, logger=self.get_logger())
+        except TTSUnavailable as exc:
+            self.get_logger().warn(f"Piper TTS unavailable ({exc}); speech will not be played.")
+            return NullTTSBackend(logger=self.get_logger(), reason=str(exc))
 
     def _on_volume(self, msg: UInt8) -> None:
-        self._volume = self._clamp_volume(msg.data)
+        self._volume = clamp_volume(msg.data)
         self.get_logger().info(f"Speaker volume set to {self._volume}")
 
     def _on_text(self, msg: String) -> None:
         text = msg.data.strip()
         if not text:
             return
-        if self._backend is None:
-            self.get_logger().error("No TTS backend found. Install espeak-ng on the robot image.")
-            return
-
         try:
-            self._speak(self._backend, text, self._volume)
+            self._tts.speak(text, self._volume)
         except Exception as exc:
             self.get_logger().error(f"Failed to speak text: {exc}")
-
-    def _speak(self, executable: str, text: str, volume: int) -> None:
-        # espeak-ng's own ALSA output uses the default device (dmix), which
-        # is not configured on the robot's I2S sound card and fails with
-        # "unable to open slave". Render to a WAV file instead and play it
-        # explicitly on the known-good ALSA device via aplay.
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
-            text_path = Path(handle.name)
-            handle.write(text)
-
-        wav_path = text_path.with_suffix(".wav")
-        try:
-            self.get_logger().info(f"Speaking at volume {volume}: {text}")
-            subprocess.run(
-                [executable, "-a", str(volume), "-f", str(text_path), "-w", str(wav_path)],
-                check=True,
-            )
-
-            if self._aplay:
-                subprocess.run([self._aplay, "-D", self._alsa_device, str(wav_path)], check=True)
-            else:
-                self.get_logger().error("aplay not found; cannot play synthesized speech.")
-        finally:
-            for path in (text_path, wav_path):
-                try:
-                    path.unlink(missing_ok=True)
-                except Exception:
-                    pass
 
 
 def main(args=None):
