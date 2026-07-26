@@ -25,7 +25,9 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>python3-serial</exec_depend>
-  <exec_depend>espeak-ng</exec_depend>
+  <!-- Piper neural TTS (speaker_node) has no rosdep key; the fleet image installs
+       the `piper` binary + a voice model. `aplay` comes from alsa-utils. -->
+  <exec_depend>alsa-utils</exec_depend>
 
   <!-- Optional testing tools -->
   <test_depend>pytest</test_depend>
