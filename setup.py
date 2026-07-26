@@ -7,7 +7,7 @@ package_name = "edubot_hardware"
 
 setup(
     name=package_name,
-    version="0.4.0",
+    version="0.5.0",
     packages=find_packages(include=[package_name, f"{package_name}.*"]),
     data_files=[
         # ROS package index

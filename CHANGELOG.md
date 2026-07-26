@@ -1,3 +1,9 @@
+## v0.5.0 (2026-07-26)
+
+### Feat
+
+- **speaker**: replace espeak-ng with Piper neural TTS
+
 ## v0.4.0 (2026-07-24)
 
 ### Feat
