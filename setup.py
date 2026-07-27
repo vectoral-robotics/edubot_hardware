@@ -16,6 +16,8 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         # Optional: install any launch files for direct use
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
+        # Phrase map (key → text) used by speaker_node and generate_phrases.py
+        (os.path.join("share", package_name), [package_name + "/phrases.json"]),
     ],
     install_requires=[
         "setuptools",

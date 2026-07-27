@@ -2,28 +2,26 @@
 """
 Speaker / TTS interface for the EduBot speaker bridge.
 
-Speech is synthesized with **Piper** — a fast, local *neural* TTS (a VITS model
-exported to ONNX). It runs fully offline on the robot and sounds far more natural
-than a formant synthesizer, while still being light enough for a Raspberry Pi.
+Two-tier playback strategy:
 
-Mirroring the motor and LED paths (SerialBridge/SimulationInterface,
-NeoPixelSPIBackend/NullLEDBackend), this module exposes two interchangeable
-backends behind a common ``speak(text, volume)`` API:
+1. **Instant pre-recorded phrases** — WAV files generated at Docker build time
+   from ``phrases.json`` and stored in ``/opt/piper/phrases/``.  A text message
+   is normalised (lowercase, punctuation stripped) and looked up in the phrase
+   map.  If a matching WAV exists it is played immediately via ``aplay``
+   with zero synthesis latency — ideal for demos.
 
-  - ``PiperTTSBackend`` — real synthesis via the ``piper`` binary, rendered to a
-    WAV and played on a known ALSA device with ``aplay``. We render to a file and
-    play it explicitly because Piper's own audio output opens the default ALSA
-    device (dmix), which is not configured on the robot's I2S sound card.
-  - ``NullTTSBackend`` — no audio (dev laptop, or ``piper``/``aplay``/the voice
-    model unavailable); it records and logs the utterance so the rest of the
-    stack behaves identically.
+2. **On-the-fly Piper TTS** — used for any text that has no pre-recorded match.
+   The ``piper`` binary synthesises the text to a temp WAV which is then played
+   via ``aplay``.  Falls back to the ALSA default device if the configured device
+   fails.
 
-The pure helpers (command building, PCM gain, volume clamp) carry no ROS or
-subprocess imports so they can be unit tested on any machine.
+Null fallback (``NullTTSBackend``) is used on dev laptops or when both
+``piper`` and ``aplay`` are unavailable.
 """
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -35,6 +33,9 @@ from pathlib import Path
 PIPER_TIMEOUT_S = 20
 APLAY_TIMEOUT_S = 10
 
+# Default location for pre-recorded phrase WAVs baked into the Docker image.
+DEFAULT_PHRASES_DIR = Path("/opt/piper/phrases")
+
 
 class TTSUnavailable(RuntimeError):
     """Raised when a real TTS backend cannot be constructed (missing tool/voice)."""
@@ -43,6 +44,12 @@ class TTSUnavailable(RuntimeError):
 # ----------------------------------------------------------------------------
 # Pure helpers (no ROS, no subprocess — unit tested)
 # ----------------------------------------------------------------------------
+
+def normalize_phrase_key(text: str) -> str:
+    """Lowercase + strip punctuation so 'Hello, EduBot!' == 'hello edubot'."""
+    return re.sub(r"[^\w\s]", "", text.lower()).strip()
+
+
 def clamp_volume(volume: float) -> int:
     """Clamp a volume to a 0..100 integer; NaN maps to 0 so a bad publish is safe."""
     if volume != volume:  # NaN is the only value not equal to itself
@@ -207,3 +214,89 @@ class PiperTTSBackend(_TTSBackend):
 
         fallback = aplay_default_command(self._aplay, str(wav_path))
         subprocess.run(fallback, check=True, timeout=APLAY_TIMEOUT_S)
+
+
+# ---------------------------------------------------------------------------
+# Phrase library: instant pre-recorded playback
+# ---------------------------------------------------------------------------
+
+class PhraseLibrary:
+    """Maps normalised phrase text to pre-generated WAV files.
+
+    WAV files are stored as ``<phrases_dir>/<key>.wav`` where ``<key>`` is the
+    snake_case identifier from ``phrases.json``.  The library builds a lookup
+    dict from *normalised text → wav path* so publishing the exact phrase text
+    (case-insensitive, punctuation-tolerant) plays the file instantly.
+    """
+
+    def __init__(
+        self,
+        phrases_dir: Path,
+        phrase_map: dict[str, str],  # key → phrase text
+        alsa_device: str,
+        *,
+        aplay_bin: str | None = None,
+        logger=None,
+    ):
+        self.logger = logger
+        self._aplay = aplay_bin or shutil.which("aplay")
+        self.alsa_device = alsa_device
+        # Build normalised-text → wav-path lookup
+        self._lookup: dict[str, Path] = {}
+        for key, text in phrase_map.items():
+            wav = phrases_dir / f"{key}.wav"
+            if wav.is_file():
+                self._lookup[normalize_phrase_key(text)] = wav
+        if logger:
+            logger.info(
+                f"PhraseLibrary loaded {len(self._lookup)}/{len(phrase_map)} phrases "
+                f"from {phrases_dir}"
+            )
+
+    def lookup(self, text: str) -> Path | None:
+        """Return WAV path for text, or None if no pre-recorded match."""
+        return self._lookup.get(normalize_phrase_key(text))
+
+    def play(self, wav_path: Path, volume: int) -> None:
+        """Play a pre-recorded WAV instantly (applies volume scaling)."""
+        if clamp_volume(volume) < 100:
+            # Scale into a temp file so the cached original stays untouched.
+            with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
+                scaled_path = Path(fh.name)
+            try:
+                _scale_wav_file(wav_path, scaled_path, volume)
+                self._play_file(scaled_path)
+            finally:
+                scaled_path.unlink(missing_ok=True)
+        else:
+            self._play_file(wav_path)
+
+    def _play_file(self, wav_path: Path) -> None:
+        if not self._aplay:
+            return
+        configured = aplay_command(self._aplay, self.alsa_device, str(wav_path))
+        try:
+            subprocess.run(
+                configured,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=APLAY_TIMEOUT_S,
+            )
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+        fallback = aplay_default_command(self._aplay, str(wav_path))
+        subprocess.run(fallback, check=True, timeout=APLAY_TIMEOUT_S)
+
+
+def _scale_wav_file(src: Path, dst: Path, volume: int) -> None:
+    """Read ``src``, apply volume scaling, write to ``dst``."""
+    with wave.open(str(src), "rb") as r:
+        params = r.getparams()
+        frames = r.readframes(r.getnframes())
+    if params.sampwidth == 2:
+        frames = scale_pcm16(frames, volume)
+    with wave.open(str(dst), "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
