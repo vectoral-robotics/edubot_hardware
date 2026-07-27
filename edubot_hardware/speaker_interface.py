@@ -56,6 +56,11 @@ def aplay_command(aplay_bin: str, alsa_device: str, wav_path: str) -> list[str]:
     return [aplay_bin, "-D", alsa_device, wav_path]
 
 
+def aplay_default_command(aplay_bin: str, wav_path: str) -> list[str]:
+    """Argv for playing a WAV on ALSA's current default device."""
+    return [aplay_bin, wav_path]
+
+
 def scale_pcm16(frames: bytes, volume: int) -> bytes:
     """Scale signed 16-bit PCM samples by ``volume``/100 (0..100), with clipping.
 
@@ -144,7 +149,7 @@ class PiperTTSBackend(_TTSBackend):
         try:
             self._render(text, wav_path)
             self._apply_gain(wav_path, volume)
-            subprocess.run(aplay_command(self._aplay, self.alsa_device, str(wav_path)), check=True)
+            self._play(wav_path)
         finally:
             wav_path.unlink(missing_ok=True)
 
@@ -171,3 +176,19 @@ class PiperTTSBackend(_TTSBackend):
         with wave.open(str(wav_path), "wb") as writer:
             writer.setparams(params)
             writer.writeframes(scaled)
+
+    def _play(self, wav_path: Path) -> None:
+        """Play WAV with configured ALSA device, then retry default device."""
+        configured = aplay_command(self._aplay, self.alsa_device, str(wav_path))
+        try:
+            subprocess.run(configured, check=True, capture_output=True, text=True)
+            return
+        except subprocess.CalledProcessError as exc:
+            err = (exc.stderr or exc.stdout or "").strip()
+            self._log_info(
+                f"aplay on '{self.alsa_device}' failed (rc={exc.returncode}); retrying default device"
+                + (f": {err}" if err else "")
+            )
+
+        fallback = aplay_default_command(self._aplay, str(wav_path))
+        subprocess.run(fallback, check=True)

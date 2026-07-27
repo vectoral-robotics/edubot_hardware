@@ -5,6 +5,7 @@ from array import array
 import pytest
 
 from edubot_hardware.speaker_interface import (
+    aplay_default_command,
     NullTTSBackend,
     PiperTTSBackend,
     TTSUnavailable,
@@ -43,6 +44,13 @@ def test_aplay_command_argv():
         "/usr/bin/aplay",
         "-D",
         "plughw:CARD=x,DEV=0",
+        "/tmp/out.wav",
+    ]
+
+
+def test_aplay_default_command_argv():
+    assert aplay_default_command("/usr/bin/aplay", "/tmp/out.wav") == [
+        "/usr/bin/aplay",
         "/tmp/out.wav",
     ]
 
