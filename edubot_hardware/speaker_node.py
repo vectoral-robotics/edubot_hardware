@@ -122,7 +122,9 @@ class SpeakerNode(Node):
     ) -> PhraseLibrary | None:
         """Load pre-recorded phrases if the WAV directory and JSON exist."""
         if not _PHRASES_JSON.is_file():
-            self.get_logger().warn(f"phrases.json not found at {_PHRASES_JSON}; no instant phrases")
+            self.get_logger().warn(
+                f"phrases.json not found at {_PHRASES_JSON}; no instant phrases"
+            )
             return None
         try:
             phrase_map: dict[str, str] = json.loads(_PHRASES_JSON.read_text())
@@ -178,151 +180,6 @@ class SpeakerNode(Node):
                         self._phrase_lib.play(wav, volume)
                         continue
                 # Tier 2: on-the-fly Piper synthesis
-                self._tts.speak(text, volume)
-            except Exception as exc:
-                self.get_logger().error(f"Failed to speak text: {exc}")
-
-    def destroy_node(self):
-        self._stop_worker.set()
-        if hasattr(self, "_worker") and self._worker.is_alive():
-            self._worker.join(timeout=1.0)
-        return super().destroy_node()
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = SpeakerNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.try_shutdown()
-
-
-if __name__ == "__main__":
-    main()
-
-
-from __future__ import annotations
-
-from pathlib import Path
-from queue import Empty, Queue
-from threading import Event, Thread
-
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
-from std_msgs.msg import String, UInt8
-
-from edubot_hardware.speaker_interface import (
-    NullTTSBackend,
-    PiperTTSBackend,
-    TTSUnavailable,
-    clamp_volume,
-)
-
-
-class SpeakerNode(Node):
-    """ROS 2 node that speaks text received on a topic."""
-
-    def __init__(self):
-        # Keep parameter services explicitly enabled for robust ros2 param access.
-        super().__init__("speaker_node", start_parameter_services=True)
-        self.get_logger().info("EduBot Speaker Node starting up...")
-
-        self.declare_parameter("default_volume", 80)
-        self.declare_parameter("alsa_device", "plughw:0")
-        # Absolute path to a Piper voice model (.onnx). The matching
-        # <model>.onnx.json must sit next to it. Empty -> no audio (Null backend).
-        self.declare_parameter("voice_model", "/opt/piper/voices/en_GB-alba-medium.onnx")
-
-        self._volume = clamp_volume(int(self.get_parameter("default_volume").value))
-        alsa_device = str(self.get_parameter("alsa_device").value)
-        configured_voice_model = str(self.get_parameter("voice_model").value).strip()
-        voice_model = self._resolve_voice_model(configured_voice_model)
-
-        self._tts = self._build_backend(voice_model, alsa_device)
-        self.get_logger().info(f"Speaker backend: {type(self._tts).__name__}")
-        self._speak_queue: Queue[tuple[str, int]] = Queue(maxsize=32)
-        self._stop_worker = Event()
-        self._worker = Thread(target=self._speak_worker, name="speaker-tts-worker", daemon=True)
-        self._worker.start()
-
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
-        # Use absolute topic names so dashboard publishers always reach this node,
-        # even when bringup runs the node inside a namespace.
-        self._text_sub = self.create_subscription(String, "/speaker/text", self._on_text, qos)
-        self._volume_sub = self.create_subscription(UInt8, "/speaker/volume", self._on_volume, qos)
-
-        self.get_logger().info(
-            "Speaker Node ready: listening on speaker/text and speaker/volume "
-            f"(default_volume={self._volume})"
-        )
-
-    def _resolve_voice_model(self, configured_path: str) -> str:
-        """Resolve a usable Piper voice model path from config or common locations."""
-        candidates: list[Path] = []
-        if configured_path:
-            candidates.append(Path(configured_path))
-
-        # Known image default.
-        candidates.append(Path("/opt/piper/voices/en_GB-alba-medium.onnx"))
-
-        for candidate in candidates:
-            if candidate.is_file():
-                if configured_path and str(candidate) != configured_path:
-                    self.get_logger().warn(
-                        f"Configured voice model not found ({configured_path}); using {candidate}"
-                    )
-                return str(candidate)
-
-        voices_dir = Path("/opt/piper/voices")
-        if voices_dir.is_dir():
-            matches = sorted(voices_dir.glob("*.onnx"))
-            if matches:
-                selected = matches[0]
-                self.get_logger().warn(
-                    f"Configured voice model not found ({configured_path or 'unset'}); "
-                    f"using discovered model {selected}"
-                )
-                return str(selected)
-
-        return configured_path
-
-    def _build_backend(self, voice_model: str, alsa_device: str):
-        """Use Piper when available; otherwise degrade to a logging-only backend."""
-        try:
-            return PiperTTSBackend(voice_model, alsa_device, logger=self.get_logger())
-        except TTSUnavailable as exc:
-            self.get_logger().warn(f"Piper TTS unavailable ({exc}); speech will not be played.")
-            return NullTTSBackend(logger=self.get_logger(), reason=str(exc))
-
-    def _on_volume(self, msg: UInt8) -> None:
-        self._volume = clamp_volume(msg.data)
-        self.get_logger().info(f"Speaker volume set to {self._volume}")
-
-    def _on_text(self, msg: String) -> None:
-        text = msg.data.strip()
-        if not text:
-            return
-        try:
-            self._speak_queue.put_nowait((text, self._volume))
-        except Exception:
-            self.get_logger().warn("Speaker queue is full; dropping utterance")
-
-    def _speak_worker(self) -> None:
-        while not self._stop_worker.is_set():
-            try:
-                text, volume = self._speak_queue.get(timeout=0.2)
-            except Empty:
-                continue
-            try:
                 self._tts.speak(text, volume)
             except Exception as exc:
                 self.get_logger().error(f"Failed to speak text: {exc}")
