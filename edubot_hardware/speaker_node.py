@@ -33,7 +33,8 @@ class SpeakerNode(Node):
     """ROS 2 node that speaks text received on a topic."""
 
     def __init__(self):
-        super().__init__("speaker_node")
+        # Keep parameter services explicitly enabled for robust ros2 param access.
+        super().__init__("speaker_node", start_parameter_services=True)
         self.get_logger().info("EduBot Speaker Node starting up...")
 
         self.declare_parameter("default_volume", 80)
@@ -47,6 +48,7 @@ class SpeakerNode(Node):
         voice_model = str(self.get_parameter("voice_model").value).strip()
 
         self._tts = self._build_backend(voice_model, alsa_device)
+        self.get_logger().info(f"Speaker backend: {type(self._tts).__name__}")
         self._speak_queue: Queue[tuple[str, int]] = Queue(maxsize=32)
         self._stop_worker = Event()
         self._worker = Thread(target=self._speak_worker, name="speaker-tts-worker", daemon=True)
