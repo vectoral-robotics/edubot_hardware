@@ -9,6 +9,10 @@ setup(
     name=package_name,
     version="0.5.0",
     packages=find_packages(include=[package_name, f"{package_name}.*"]),
+    package_data={
+        # Install phrases.json alongside the Python module so Path(__file__).parent resolves it.
+        package_name: ["phrases.json"],
+    },
     data_files=[
         # ROS package index
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -16,8 +20,6 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         # Optional: install any launch files for direct use
         (os.path.join("share", package_name, "launch"), glob("launch/*.py")),
-        # Phrase map (key → text) used by speaker_node and generate_phrases.py
-        (os.path.join("share", package_name), [package_name + "/phrases.json"]),
     ],
     install_requires=[
         "setuptools",
