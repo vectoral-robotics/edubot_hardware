@@ -37,6 +37,7 @@ setup(
             "led_node = edubot_hardware.led_node:main",
             "imu_node = edubot_hardware.imu_node:main",
             "speaker_node = edubot_hardware.speaker_node:main",
+            "generate_phrases = edubot_hardware.generate_phrases:main",
         ],
     },
 )
