@@ -50,8 +50,10 @@ class SpeakerNode(Node):
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self._text_sub = self.create_subscription(String, "speaker/text", self._on_text, qos)
-        self._volume_sub = self.create_subscription(UInt8, "speaker/volume", self._on_volume, qos)
+        # Use absolute topic names so dashboard publishers always reach this node,
+        # even when bringup runs the node inside a namespace.
+        self._text_sub = self.create_subscription(String, "/speaker/text", self._on_text, qos)
+        self._volume_sub = self.create_subscription(UInt8, "/speaker/volume", self._on_volume, qos)
 
         self.get_logger().info(
             "Speaker Node ready: listening on speaker/text and speaker/volume "
