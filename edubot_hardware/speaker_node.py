@@ -13,6 +13,9 @@ is unit tested without ROS.
 
 from __future__ import annotations
 
+from queue import Empty, Queue
+from threading import Event, Thread
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
@@ -44,6 +47,10 @@ class SpeakerNode(Node):
         voice_model = str(self.get_parameter("voice_model").value).strip()
 
         self._tts = self._build_backend(voice_model, alsa_device)
+        self._speak_queue: Queue[tuple[str, int]] = Queue(maxsize=32)
+        self._stop_worker = Event()
+        self._worker = Thread(target=self._speak_worker, name="speaker-tts-worker", daemon=True)
+        self._worker.start()
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
@@ -77,9 +84,26 @@ class SpeakerNode(Node):
         if not text:
             return
         try:
-            self._tts.speak(text, self._volume)
-        except Exception as exc:
-            self.get_logger().error(f"Failed to speak text: {exc}")
+            self._speak_queue.put_nowait((text, self._volume))
+        except Exception:
+            self.get_logger().warn("Speaker queue is full; dropping utterance")
+
+    def _speak_worker(self) -> None:
+        while not self._stop_worker.is_set():
+            try:
+                text, volume = self._speak_queue.get(timeout=0.2)
+            except Empty:
+                continue
+            try:
+                self._tts.speak(text, volume)
+            except Exception as exc:
+                self.get_logger().error(f"Failed to speak text: {exc}")
+
+    def destroy_node(self):
+        self._stop_worker.set()
+        if hasattr(self, "_worker") and self._worker.is_alive():
+            self._worker.join(timeout=1.0)
+        return super().destroy_node()
 
 
 def main(args=None):

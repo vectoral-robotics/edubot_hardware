@@ -32,6 +32,10 @@ from array import array
 from pathlib import Path
 
 
+PIPER_TIMEOUT_S = 20
+APLAY_TIMEOUT_S = 10
+
+
 class TTSUnavailable(RuntimeError):
     """Raised when a real TTS backend cannot be constructed (missing tool/voice)."""
 
@@ -162,6 +166,7 @@ class PiperTTSBackend(_TTSBackend):
             text=True,
             check=True,
             capture_output=True,
+            timeout=PIPER_TIMEOUT_S,
         )
 
     def _apply_gain(self, wav_path: Path, volume: int) -> None:
@@ -181,7 +186,13 @@ class PiperTTSBackend(_TTSBackend):
         """Play WAV with configured ALSA device, then retry default device."""
         configured = aplay_command(self._aplay, self.alsa_device, str(wav_path))
         try:
-            subprocess.run(configured, check=True, capture_output=True, text=True)
+            subprocess.run(
+                configured,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=APLAY_TIMEOUT_S,
+            )
             return
         except subprocess.CalledProcessError as exc:
             err = (exc.stderr or exc.stdout or "").strip()
@@ -189,6 +200,10 @@ class PiperTTSBackend(_TTSBackend):
                 f"aplay on '{self.alsa_device}' failed (rc={exc.returncode}); retrying default device"
                 + (f": {err}" if err else "")
             )
+        except subprocess.TimeoutExpired:
+            self._log_info(
+                f"aplay on '{self.alsa_device}' timed out after {APLAY_TIMEOUT_S}s; retrying default device"
+            )
 
         fallback = aplay_default_command(self._aplay, str(wav_path))
-        subprocess.run(fallback, check=True)
+        subprocess.run(fallback, check=True, timeout=APLAY_TIMEOUT_S)
