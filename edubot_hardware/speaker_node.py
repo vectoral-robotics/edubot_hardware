@@ -34,7 +34,7 @@ class SpeakerNode(Node):
         self.get_logger().info("EduBot Speaker Node starting up...")
 
         self.declare_parameter("default_volume", 80)
-        self.declare_parameter("alsa_device", "plughw:CARD=sndrpigooglevoi,DEV=0")
+        self.declare_parameter("alsa_device", "plughw:0")
         # Absolute path to a Piper voice model (.onnx). The matching
         # <model>.onnx.json must sit next to it. Empty -> no audio (Null backend).
         self.declare_parameter("voice_model", "")
