@@ -31,15 +31,16 @@ from pathlib import Path
 
 
 PIPER_TIMEOUT_S = 20
-APLAY_TIMEOUT_S = 10
+APLAY_TIMEOUT_S = 30
 
 # Default location for pre-recorded phrase WAVs baked into the Docker image.
 DEFAULT_PHRASES_DIR = Path("/opt/piper/phrases")
 
 # Silence padding appended to every WAV before playback to prevent the
 # ALSA/speaker hardware from cutting off the last syllable with a click/pop.
-SILENCE_PADDING_MS = 450
-FADE_OUT_MS = 60
+SILENCE_PADDING_MS = 700
+FADE_IN_MS = 25
+FADE_OUT_MS = 120
 
 
 class TTSUnavailable(RuntimeError):
@@ -77,23 +78,40 @@ def aplay_default_command(aplay_bin: str, wav_path: str) -> list[str]:
     return [aplay_bin, wav_path]
 
 
-def fade_out_pcm16(frames: bytes, nchannels: int, fade_frames: int) -> bytes:
-    """Apply a linear fade-out over the last ``fade_frames`` PCM frames."""
-    if nchannels <= 0 or fade_frames <= 0:
+def fade_edges_pcm16(
+    frames: bytes,
+    nchannels: int,
+    fade_in_frames: int,
+    fade_out_frames: int,
+) -> bytes:
+    """Apply linear fade-in and fade-out on signed 16-bit PCM."""
+    if nchannels <= 0 or (fade_in_frames <= 0 and fade_out_frames <= 0):
         return frames
     samples = array("h")
     samples.frombytes(frames)
     total_frames = len(samples) // nchannels
     if total_frames <= 0:
         return frames
-    fade_frames = min(fade_frames, total_frames)
-    denom = max(1, fade_frames - 1)
-    start_frame = total_frames - fade_frames
-    for i in range(fade_frames):
-        gain = (fade_frames - 1 - i) / denom
-        base = (start_frame + i) * nchannels
-        for ch in range(nchannels):
-            samples[base + ch] = int(samples[base + ch] * gain)
+    # Fade-in
+    fade_in_frames = min(max(0, fade_in_frames), total_frames)
+    if fade_in_frames > 0:
+        denom_in = max(1, fade_in_frames - 1)
+        for i in range(fade_in_frames):
+            gain = i / denom_in
+            base = i * nchannels
+            for ch in range(nchannels):
+                samples[base + ch] = int(samples[base + ch] * gain)
+
+    # Fade-out
+    fade_out_frames = min(max(0, fade_out_frames), total_frames)
+    if fade_out_frames > 0:
+        denom_out = max(1, fade_out_frames - 1)
+        start_frame = total_frames - fade_out_frames
+        for i in range(fade_out_frames):
+            gain = (fade_out_frames - 1 - i) / denom_out
+            base = (start_frame + i) * nchannels
+            for ch in range(nchannels):
+                samples[base + ch] = int(samples[base + ch] * gain)
     return samples.tobytes()
 
 
@@ -102,6 +120,7 @@ def _postprocess_wav_for_playback(
     dst: Path,
     volume: int,
     *,
+    fade_in_ms: int = FADE_IN_MS,
     fade_out_ms: int = FADE_OUT_MS,
     silence_padding_ms: int = SILENCE_PADDING_MS,
 ) -> None:
@@ -112,8 +131,9 @@ def _postprocess_wav_for_playback(
 
     if params.sampwidth == 2:
         frames = scale_pcm16(frames, volume)
+        fade_in_frames = int(params.framerate * fade_in_ms / 1000)
         fade_frames = int(params.framerate * fade_out_ms / 1000)
-        frames = fade_out_pcm16(frames, params.nchannels, fade_frames)
+        frames = fade_edges_pcm16(frames, params.nchannels, fade_in_frames, fade_frames)
 
     n_silence = int(params.framerate * silence_padding_ms / 1000) * params.nchannels * params.sampwidth
     with wave.open(str(dst), "wb") as w:
@@ -183,6 +203,7 @@ class PiperTTSBackend(_TTSBackend):
         voice_model: str,
         alsa_device: str,
         tail_silence_ms: int = SILENCE_PADDING_MS,
+        tail_fade_in_ms: int = FADE_IN_MS,
         tail_fade_ms: int = FADE_OUT_MS,
         *,
         piper_bin: str | None = None,
@@ -193,6 +214,7 @@ class PiperTTSBackend(_TTSBackend):
         self.voice_model = str(voice_model)
         self.alsa_device = str(alsa_device)
         self.tail_silence_ms = max(0, int(tail_silence_ms))
+        self.tail_fade_in_ms = max(0, int(tail_fade_in_ms))
         self.tail_fade_ms = max(0, int(tail_fade_ms))
         self._piper = piper_bin or shutil.which("piper")
         self._aplay = aplay_bin or shutil.which("aplay")
@@ -217,6 +239,7 @@ class PiperTTSBackend(_TTSBackend):
                 wav_path,
                 wav_path,
                 volume,
+                fade_in_ms=self.tail_fade_in_ms,
                 fade_out_ms=self.tail_fade_ms,
                 silence_padding_ms=self.tail_silence_ms,
             )
@@ -282,6 +305,7 @@ class PhraseLibrary:
         phrase_map: dict[str, str],  # key → phrase text
         alsa_device: str,
         tail_silence_ms: int = SILENCE_PADDING_MS,
+        tail_fade_in_ms: int = FADE_IN_MS,
         tail_fade_ms: int = FADE_OUT_MS,
         *,
         aplay_bin: str | None = None,
@@ -291,6 +315,7 @@ class PhraseLibrary:
         self._aplay = aplay_bin or shutil.which("aplay")
         self.alsa_device = alsa_device
         self.tail_silence_ms = max(0, int(tail_silence_ms))
+        self.tail_fade_in_ms = max(0, int(tail_fade_in_ms))
         self.tail_fade_ms = max(0, int(tail_fade_ms))
         # Build normalised-text → wav-path lookup
         self._lookup: dict[str, Path] = {}
@@ -319,6 +344,7 @@ class PhraseLibrary:
                 wav_path,
                 prepared_path,
                 volume,
+                fade_in_ms=self.tail_fade_in_ms,
                 fade_out_ms=self.tail_fade_ms,
                 silence_padding_ms=self.tail_silence_ms,
             )

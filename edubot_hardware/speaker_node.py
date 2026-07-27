@@ -54,8 +54,9 @@ class SpeakerNode(Node):
         self.declare_parameter("alsa_device", "plughw:0")
         self.declare_parameter("voice_model", _DEFAULT_VOICE_MODEL)
         self.declare_parameter("phrases_dir", _DEFAULT_PHRASES_DIR)
-        self.declare_parameter("tail_silence_ms", 450)
-        self.declare_parameter("tail_fade_ms", 60)
+        self.declare_parameter("tail_silence_ms", 700)
+        self.declare_parameter("tail_fade_in_ms", 25)
+        self.declare_parameter("tail_fade_ms", 120)
 
         self._volume = clamp_volume(int(self.get_parameter("default_volume").value))
         alsa_device = str(self.get_parameter("alsa_device").value)
@@ -64,18 +65,21 @@ class SpeakerNode(Node):
         )
         phrases_dir = Path(str(self.get_parameter("phrases_dir").value).strip())
         tail_silence_ms = max(0, int(self.get_parameter("tail_silence_ms").value))
+        tail_fade_in_ms = max(0, int(self.get_parameter("tail_fade_in_ms").value))
         tail_fade_ms = max(0, int(self.get_parameter("tail_fade_ms").value))
 
         self._phrase_lib = self._build_phrase_library(
             phrases_dir,
             alsa_device,
             tail_silence_ms,
+            tail_fade_in_ms,
             tail_fade_ms,
         )
         self._tts = self._build_backend(
             voice_model,
             alsa_device,
             tail_silence_ms,
+            tail_fade_in_ms,
             tail_fade_ms,
         )
         self.get_logger().info(f"Speaker backend: {type(self._tts).__name__}")
@@ -139,6 +143,7 @@ class SpeakerNode(Node):
         phrases_dir: Path,
         alsa_device: str,
         tail_silence_ms: int,
+        tail_fade_in_ms: int,
         tail_fade_ms: int,
     ) -> PhraseLibrary | None:
         """Load pre-recorded phrases if the WAV directory and JSON exist."""
@@ -165,6 +170,7 @@ class SpeakerNode(Node):
             phrase_map,
             alsa_device,
             tail_silence_ms=tail_silence_ms,
+            tail_fade_in_ms=tail_fade_in_ms,
             tail_fade_ms=tail_fade_ms,
             logger=self.get_logger(),
         )
@@ -174,6 +180,7 @@ class SpeakerNode(Node):
         voice_model: str,
         alsa_device: str,
         tail_silence_ms: int,
+        tail_fade_in_ms: int,
         tail_fade_ms: int,
     ):
         """Use Piper when available; otherwise degrade to a logging-only backend."""
@@ -182,6 +189,7 @@ class SpeakerNode(Node):
                 voice_model,
                 alsa_device,
                 tail_silence_ms=tail_silence_ms,
+                tail_fade_in_ms=tail_fade_in_ms,
                 tail_fade_ms=tail_fade_ms,
                 logger=self.get_logger(),
             )
