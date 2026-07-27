@@ -39,7 +39,7 @@ from edubot_hardware.speaker_interface import (
 # phrases.json lives next to this file inside the installed package.
 _PHRASES_JSON = Path(__file__).parent / "phrases.json"
 _DEFAULT_PHRASES_DIR = str(DEFAULT_PHRASES_DIR)
-_DEFAULT_VOICE_MODEL = "/opt/piper/voices/en_GB-alba-medium.onnx"
+_DEFAULT_VOICE_MODEL = "/opt/piper/voices/en_US-lessac-high.onnx"
 
 
 class SpeakerNode(Node):
@@ -93,6 +93,9 @@ class SpeakerNode(Node):
         if configured_path:
             candidates.append(Path(configured_path))
         candidates.append(Path(_DEFAULT_VOICE_MODEL))
+
+        # Also try the old alba voice as last known fallback.
+        candidates.append(Path("/opt/piper/voices/en_GB-alba-medium.onnx"))
 
         for candidate in candidates:
             if candidate.is_file():

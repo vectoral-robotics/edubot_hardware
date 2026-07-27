@@ -36,6 +36,10 @@ APLAY_TIMEOUT_S = 10
 # Default location for pre-recorded phrase WAVs baked into the Docker image.
 DEFAULT_PHRASES_DIR = Path("/opt/piper/phrases")
 
+# Silence padding appended to every WAV before playback to prevent the
+# ALSA/speaker hardware from cutting off the last syllable with a click/pop.
+SILENCE_PADDING_MS = 150
+
 
 class TTSUnavailable(RuntimeError):
     """Raised when a real TTS backend cannot be constructed (missing tool/voice)."""
@@ -70,6 +74,22 @@ def aplay_command(aplay_bin: str, alsa_device: str, wav_path: str) -> list[str]:
 def aplay_default_command(aplay_bin: str, wav_path: str) -> list[str]:
     """Argv for playing a WAV on ALSA's current default device."""
     return [aplay_bin, wav_path]
+
+
+def _append_silence(wav_path: Path, ms: int = SILENCE_PADDING_MS) -> None:
+    """Append ``ms`` milliseconds of silence to a WAV file in-place.
+
+    Prevents the ALSA driver / speaker amplifier from clipping the tail of
+    the audio with an audible click or pop when playback ends abruptly.
+    """
+    with wave.open(str(wav_path), "rb") as r:
+        params = r.getparams()
+        frames = r.readframes(r.getnframes())
+    n_silence = int(params.framerate * ms / 1000) * params.nchannels * params.sampwidth
+    with wave.open(str(wav_path), "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
+        w.writeframes(b"\x00" * n_silence)
 
 
 def scale_pcm16(frames: bytes, volume: int) -> bytes:
@@ -160,6 +180,7 @@ class PiperTTSBackend(_TTSBackend):
         try:
             self._render(text, wav_path)
             self._apply_gain(wav_path, volume)
+            _append_silence(wav_path)
             self._play(wav_path)
         finally:
             wav_path.unlink(missing_ok=True)
@@ -265,11 +286,19 @@ class PhraseLibrary:
                 scaled_path = Path(fh.name)
             try:
                 _scale_wav_file(wav_path, scaled_path, volume)
+                _append_silence(scaled_path)
                 self._play_file(scaled_path)
             finally:
                 scaled_path.unlink(missing_ok=True)
         else:
-            self._play_file(wav_path)
+            with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
+                padded_path = Path(fh.name)
+            try:
+                _scale_wav_file(wav_path, padded_path, 100)
+                _append_silence(padded_path)
+                self._play_file(padded_path)
+            finally:
+                padded_path.unlink(missing_ok=True)
 
     def _play_file(self, wav_path: Path) -> None:
         if not self._aplay:
