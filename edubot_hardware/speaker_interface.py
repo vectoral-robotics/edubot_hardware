@@ -38,8 +38,8 @@ DEFAULT_PHRASES_DIR = Path("/opt/piper/phrases")
 
 # Silence padding appended to every WAV before playback to prevent the
 # ALSA/speaker hardware from cutting off the last syllable with a click/pop.
-SILENCE_PADDING_MS = 150
-FADE_OUT_MS = 20
+SILENCE_PADDING_MS = 450
+FADE_OUT_MS = 60
 
 
 class TTSUnavailable(RuntimeError):
@@ -182,6 +182,8 @@ class PiperTTSBackend(_TTSBackend):
         self,
         voice_model: str,
         alsa_device: str,
+        tail_silence_ms: int = SILENCE_PADDING_MS,
+        tail_fade_ms: int = FADE_OUT_MS,
         *,
         piper_bin: str | None = None,
         aplay_bin: str | None = None,
@@ -190,6 +192,8 @@ class PiperTTSBackend(_TTSBackend):
         self.logger = logger
         self.voice_model = str(voice_model)
         self.alsa_device = str(alsa_device)
+        self.tail_silence_ms = max(0, int(tail_silence_ms))
+        self.tail_fade_ms = max(0, int(tail_fade_ms))
         self._piper = piper_bin or shutil.which("piper")
         self._aplay = aplay_bin or shutil.which("aplay")
 
@@ -209,7 +213,13 @@ class PiperTTSBackend(_TTSBackend):
             wav_path = Path(handle.name)
         try:
             self._render(text, wav_path)
-            _postprocess_wav_for_playback(wav_path, wav_path, volume)
+            _postprocess_wav_for_playback(
+                wav_path,
+                wav_path,
+                volume,
+                fade_out_ms=self.tail_fade_ms,
+                silence_padding_ms=self.tail_silence_ms,
+            )
             self._play(wav_path)
         finally:
             wav_path.unlink(missing_ok=True)
@@ -271,6 +281,8 @@ class PhraseLibrary:
         phrases_dir: Path,
         phrase_map: dict[str, str],  # key → phrase text
         alsa_device: str,
+        tail_silence_ms: int = SILENCE_PADDING_MS,
+        tail_fade_ms: int = FADE_OUT_MS,
         *,
         aplay_bin: str | None = None,
         logger=None,
@@ -278,6 +290,8 @@ class PhraseLibrary:
         self.logger = logger
         self._aplay = aplay_bin or shutil.which("aplay")
         self.alsa_device = alsa_device
+        self.tail_silence_ms = max(0, int(tail_silence_ms))
+        self.tail_fade_ms = max(0, int(tail_fade_ms))
         # Build normalised-text → wav-path lookup
         self._lookup: dict[str, Path] = {}
         for key, text in phrase_map.items():
@@ -301,7 +315,13 @@ class PhraseLibrary:
         with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
             prepared_path = Path(fh.name)
         try:
-            _postprocess_wav_for_playback(wav_path, prepared_path, volume)
+            _postprocess_wav_for_playback(
+                wav_path,
+                prepared_path,
+                volume,
+                fade_out_ms=self.tail_fade_ms,
+                silence_padding_ms=self.tail_silence_ms,
+            )
             self._play_file(prepared_path)
         finally:
             prepared_path.unlink(missing_ok=True)
