@@ -11,6 +11,7 @@ from edubot_hardware.speaker_interface import (
     TTSUnavailable,
     aplay_command,
     clamp_volume,
+    fade_out_pcm16,
     piper_command,
     scale_pcm16,
 )
@@ -72,6 +73,15 @@ def test_scale_pcm16_halves_samples_and_preserves_length():
     out.frombytes(scale_pcm16(pcm, 50))
     assert list(out) == [500, -500, 16383, -16384]
     assert len(scale_pcm16(pcm, 50)) == len(pcm)
+
+
+def test_fade_out_pcm16_fades_last_frames_to_zero():
+    pcm = array("h", [1000, 1000, 1000, 1000, 1000]).tobytes()
+    out = array("h")
+    out.frombytes(fade_out_pcm16(pcm, nchannels=1, fade_frames=3))
+    assert list(out)[:2] == [1000, 1000]
+    assert out[-1] == 0
+    assert out[-2] < out[-3]
 
 
 def test_null_backend_records_and_never_raises():

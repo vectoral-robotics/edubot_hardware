@@ -39,6 +39,7 @@ DEFAULT_PHRASES_DIR = Path("/opt/piper/phrases")
 # Silence padding appended to every WAV before playback to prevent the
 # ALSA/speaker hardware from cutting off the last syllable with a click/pop.
 SILENCE_PADDING_MS = 150
+FADE_OUT_MS = 20
 
 
 class TTSUnavailable(RuntimeError):
@@ -76,17 +77,46 @@ def aplay_default_command(aplay_bin: str, wav_path: str) -> list[str]:
     return [aplay_bin, wav_path]
 
 
-def _append_silence(wav_path: Path, ms: int = SILENCE_PADDING_MS) -> None:
-    """Append ``ms`` milliseconds of silence to a WAV file in-place.
+def fade_out_pcm16(frames: bytes, nchannels: int, fade_frames: int) -> bytes:
+    """Apply a linear fade-out over the last ``fade_frames`` PCM frames."""
+    if nchannels <= 0 or fade_frames <= 0:
+        return frames
+    samples = array("h")
+    samples.frombytes(frames)
+    total_frames = len(samples) // nchannels
+    if total_frames <= 0:
+        return frames
+    fade_frames = min(fade_frames, total_frames)
+    denom = max(1, fade_frames - 1)
+    start_frame = total_frames - fade_frames
+    for i in range(fade_frames):
+        gain = (fade_frames - 1 - i) / denom
+        base = (start_frame + i) * nchannels
+        for ch in range(nchannels):
+            samples[base + ch] = int(samples[base + ch] * gain)
+    return samples.tobytes()
 
-    Prevents the ALSA driver / speaker amplifier from clipping the tail of
-    the audio with an audible click or pop when playback ends abruptly.
-    """
-    with wave.open(str(wav_path), "rb") as r:
+
+def _postprocess_wav_for_playback(
+    src: Path,
+    dst: Path,
+    volume: int,
+    *,
+    fade_out_ms: int = FADE_OUT_MS,
+    silence_padding_ms: int = SILENCE_PADDING_MS,
+) -> None:
+    """Scale volume, smooth tail, and append silence before playback."""
+    with wave.open(str(src), "rb") as r:
         params = r.getparams()
         frames = r.readframes(r.getnframes())
-    n_silence = int(params.framerate * ms / 1000) * params.nchannels * params.sampwidth
-    with wave.open(str(wav_path), "wb") as w:
+
+    if params.sampwidth == 2:
+        frames = scale_pcm16(frames, volume)
+        fade_frames = int(params.framerate * fade_out_ms / 1000)
+        frames = fade_out_pcm16(frames, params.nchannels, fade_frames)
+
+    n_silence = int(params.framerate * silence_padding_ms / 1000) * params.nchannels * params.sampwidth
+    with wave.open(str(dst), "wb") as w:
         w.setparams(params)
         w.writeframes(frames)
         w.writeframes(b"\x00" * n_silence)
@@ -179,8 +209,7 @@ class PiperTTSBackend(_TTSBackend):
             wav_path = Path(handle.name)
         try:
             self._render(text, wav_path)
-            self._apply_gain(wav_path, volume)
-            _append_silence(wav_path)
+            _postprocess_wav_for_playback(wav_path, wav_path, volume)
             self._play(wav_path)
         finally:
             wav_path.unlink(missing_ok=True)
@@ -196,19 +225,6 @@ class PiperTTSBackend(_TTSBackend):
             capture_output=True,
             timeout=PIPER_TIMEOUT_S,
         )
-
-    def _apply_gain(self, wav_path: Path, volume: int) -> None:
-        if clamp_volume(volume) >= 100:
-            return
-        with wave.open(str(wav_path), "rb") as reader:
-            params = reader.getparams()
-            frames = reader.readframes(reader.getnframes())
-        if params.sampwidth != 2:  # scale_pcm16 only handles 16-bit PCM (Piper's output)
-            return
-        scaled = scale_pcm16(frames, volume)
-        with wave.open(str(wav_path), "wb") as writer:
-            writer.setparams(params)
-            writer.writeframes(scaled)
 
     def _play(self, wav_path: Path) -> None:
         """Play WAV with configured ALSA device, then retry default device."""
@@ -279,26 +295,16 @@ class PhraseLibrary:
         return self._lookup.get(normalize_phrase_key(text))
 
     def play(self, wav_path: Path, volume: int) -> None:
-        """Play a pre-recorded WAV instantly (applies volume scaling)."""
-        if clamp_volume(volume) < 100:
-            # Scale into a temp file so the cached original stays untouched.
-            with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
-                scaled_path = Path(fh.name)
-            try:
-                _scale_wav_file(wav_path, scaled_path, volume)
-                _append_silence(scaled_path)
-                self._play_file(scaled_path)
-            finally:
-                scaled_path.unlink(missing_ok=True)
-        else:
-            with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
-                padded_path = Path(fh.name)
-            try:
-                _scale_wav_file(wav_path, padded_path, 100)
-                _append_silence(padded_path)
-                self._play_file(padded_path)
-            finally:
-                padded_path.unlink(missing_ok=True)
+        """Play pre-recorded WAV with volume + tail smoothing."""
+        if not self._aplay:
+            return
+        with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as fh:
+            prepared_path = Path(fh.name)
+        try:
+            _postprocess_wav_for_playback(wav_path, prepared_path, volume)
+            self._play_file(prepared_path)
+        finally:
+            prepared_path.unlink(missing_ok=True)
 
     def _play_file(self, wav_path: Path) -> None:
         if not self._aplay:
@@ -319,13 +325,3 @@ class PhraseLibrary:
         subprocess.run(fallback, check=True, timeout=APLAY_TIMEOUT_S)
 
 
-def _scale_wav_file(src: Path, dst: Path, volume: int) -> None:
-    """Read ``src``, apply volume scaling, write to ``dst``."""
-    with wave.open(str(src), "rb") as r:
-        params = r.getparams()
-        frames = r.readframes(r.getnframes())
-    if params.sampwidth == 2:
-        frames = scale_pcm16(frames, volume)
-    with wave.open(str(dst), "wb") as w:
-        w.setparams(params)
-        w.writeframes(frames)
