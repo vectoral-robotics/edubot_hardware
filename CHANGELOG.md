@@ -1,3 +1,27 @@
+## v0.6.0 (2026-07-30)
+
+### Feat
+
+- **hardware**: add publish_tf parameter to disable TF when EKF is active
+- **speaker**: add generate_phrases console script
+- **speaker**: instant pre-recorded phrases with Piper fallback
+
+### Fix
+
+- **test**: patch shutil.which in piper binary test and fix ruff formatting
+- **speaker**: stronger edge smoothing and longer playback tail
+- **speaker**: add configurable tail fade and silence smoothing
+- **speaker**: smooth audio tail and keep volume control
+- **speaker**: switch to en_US-lessac-high voice; pad silence to fix end click
+- **speaker**: install phrases.json as package_data so node finds it at runtime
+- **speaker**: remove duplicate appended code, clean up imports
+- **speaker**: auto-resolve piper voice model when parameter is unset
+- **speaker**: enforce parameter services and log active backend
+- **speaker**: avoid blocking ROS callbacks during TTS playback
+- **speaker**: default ALSA device to plughw:0
+- **speaker**: fallback to default ALSA device on aplay failure
+- **speaker**: subscribe to absolute speaker topics
+
 ## v0.5.0 (2026-07-26)
 
 ### Feat

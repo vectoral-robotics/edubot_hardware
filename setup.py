@@ -7,7 +7,7 @@ package_name = "edubot_hardware"
 
 setup(
     name=package_name,
-    version="0.5.0",
+    version="0.6.0",
     packages=find_packages(include=[package_name, f"{package_name}.*"]),
     package_data={
         # Install phrases.json alongside the Python module so Path(__file__).parent resolves it.
