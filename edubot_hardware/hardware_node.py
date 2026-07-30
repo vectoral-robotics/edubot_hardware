@@ -47,6 +47,7 @@ class HardwareNode(Node):
         self.declare_parameter("log_commands", True)
         self.declare_parameter("odom_hz", 50.0)
         self.declare_parameter("tf_hz", 30.0)
+        self.declare_parameter("publish_tf", True)
 
         # Odometry covariance diagonals. Values are variances (= error^2).
         # For a mecanum base the sideways (vy) and yaw estimates are less
@@ -133,7 +134,14 @@ class HardwareNode(Node):
 
         # Timers
         self.create_timer(1.0 / self._odom_hz, self._update_loop)
-        self.create_timer(1.0 / self._tf_hz, self._publish_tf)
+        self._publish_tf_enabled = bool(self.get_parameter("publish_tf").value)
+        if self._publish_tf_enabled:
+            self.create_timer(1.0 / self._tf_hz, self._publish_tf)
+        else:
+            self.get_logger().info(
+                "TF broadcasting disabled (publish_tf=false). "
+                "Expecting robot_localization EKF to publish odom->base_link."
+            )
 
         self.get_logger().info("ESP32 HardwareNode initialized successfully.")
 
