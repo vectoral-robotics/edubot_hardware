@@ -1,5 +1,6 @@
 """Unit tests for the pure TTS helpers and backends (no ROS, no audio)."""
 
+import unittest.mock
 from array import array
 
 import pytest
@@ -9,7 +10,9 @@ from edubot_hardware.speaker_interface import (
     PiperTTSBackend,
     TTSUnavailable,
     aplay_command,
+    aplay_default_command,
     clamp_volume,
+    fade_edges_pcm16,
     piper_command,
     scale_pcm16,
 )
@@ -47,6 +50,13 @@ def test_aplay_command_argv():
     ]
 
 
+def test_aplay_default_command_argv():
+    assert aplay_default_command("/usr/bin/aplay", "/tmp/out.wav") == [
+        "/usr/bin/aplay",
+        "/tmp/out.wav",
+    ]
+
+
 def test_scale_pcm16_full_volume_is_identity():
     pcm = array("h", [1000, -1000, 32767, -32768]).tobytes()
     assert scale_pcm16(pcm, 100) == pcm
@@ -64,6 +74,15 @@ def test_scale_pcm16_halves_samples_and_preserves_length():
     out.frombytes(scale_pcm16(pcm, 50))
     assert list(out) == [500, -500, 16383, -16384]
     assert len(scale_pcm16(pcm, 50)) == len(pcm)
+
+
+def test_fade_edges_pcm16_fades_last_frames_to_zero():
+    pcm = array("h", [1000, 1000, 1000, 1000, 1000]).tobytes()
+    out = array("h")
+    out.frombytes(fade_edges_pcm16(pcm, nchannels=1, fade_in_frames=1, fade_out_frames=3))
+    assert list(out)[:2] == [0, 1000]
+    assert out[-1] == 0
+    assert out[-2] < out[-3]
 
 
 def test_null_backend_records_and_never_raises():
@@ -86,10 +105,12 @@ def test_piper_backend_requires_voice_model(tmp_path):
 def test_piper_backend_requires_binaries(tmp_path):
     model = tmp_path / "voice.onnx"
     model.write_bytes(b"\x00")  # presence is all the constructor checks
-    with pytest.raises(TTSUnavailable, match="piper"):
-        PiperTTSBackend(str(model), "dev", piper_bin=None, aplay_bin="/usr/bin/aplay")
-    with pytest.raises(TTSUnavailable, match="aplay"):
-        PiperTTSBackend(str(model), "dev", piper_bin="/usr/bin/piper", aplay_bin=None)
+    # Patch shutil.which so the fallback never finds a system-installed binary.
+    with unittest.mock.patch("shutil.which", return_value=None):
+        with pytest.raises(TTSUnavailable, match="piper"):
+            PiperTTSBackend(str(model), "dev", piper_bin=None, aplay_bin="/usr/bin/aplay")
+        with pytest.raises(TTSUnavailable, match="aplay"):
+            PiperTTSBackend(str(model), "dev", piper_bin="/usr/bin/piper", aplay_bin=None)
 
 
 def test_piper_backend_constructs_when_everything_present(tmp_path):

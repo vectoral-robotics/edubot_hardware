@@ -9,6 +9,10 @@ setup(
     name=package_name,
     version="0.5.0",
     packages=find_packages(include=[package_name, f"{package_name}.*"]),
+    package_data={
+        # Install phrases.json alongside the Python module so Path(__file__).parent resolves it.
+        package_name: ["phrases.json"],
+    },
     data_files=[
         # ROS package index
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -33,6 +37,7 @@ setup(
             "led_node = edubot_hardware.led_node:main",
             "imu_node = edubot_hardware.imu_node:main",
             "speaker_node = edubot_hardware.speaker_node:main",
+            "generate_phrases = edubot_hardware.generate_phrases:main",
         ],
     },
 )

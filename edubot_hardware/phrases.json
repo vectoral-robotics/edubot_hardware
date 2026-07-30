@@ -1,0 +1,22 @@
+{
+  "hello_i_am_edubot":   "Hello! I am EduBot.",
+  "demo_starting":        "Starting demo.",
+  "demo_complete":        "Demo complete.",
+  "ready":                "Ready.",
+  "stopping":             "Stopping.",
+  "moving_forward":       "Moving forward.",
+  "moving_backward":      "Moving backward.",
+  "turning_left":         "Turning left.",
+  "turning_right":        "Turning right.",
+  "strafing_left":        "Strafing left.",
+  "strafing_right":       "Strafing right.",
+  "person_detected":      "Person detected.",
+  "obstacle_detected":    "Obstacle detected.",
+  "following_person":     "Following person.",
+  "object_detected":      "Object detected.",
+  "target_reached":       "Target reached.",
+  "low_battery":          "Warning: low battery.",
+  "connection_lost":      "Warning: connection lost.",
+  "great_job":            "Great job!",
+  "watch_out":            "Watch out!"
+}
