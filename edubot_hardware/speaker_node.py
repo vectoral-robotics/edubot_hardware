@@ -119,8 +119,7 @@ class SpeakerNode(Node):
             if candidate.is_file():
                 if configured_path and str(candidate) != configured_path:
                     self.get_logger().warn(
-                        f"Configured voice model not found ({configured_path}); "
-                        f"using {candidate}"
+                        f"Configured voice model not found ({configured_path}); using {candidate}"
                     )
                 return str(candidate)
 

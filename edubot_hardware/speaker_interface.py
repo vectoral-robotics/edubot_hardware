@@ -29,7 +29,6 @@ import wave
 from array import array
 from pathlib import Path
 
-
 PIPER_TIMEOUT_S = 20
 APLAY_TIMEOUT_S = 30
 
@@ -50,6 +49,7 @@ class TTSUnavailable(RuntimeError):
 # ----------------------------------------------------------------------------
 # Pure helpers (no ROS, no subprocess — unit tested)
 # ----------------------------------------------------------------------------
+
 
 def normalize_phrase_key(text: str) -> str:
     """Lowercase + strip punctuation so 'Hello, EduBot!' == 'hello edubot'."""
@@ -135,7 +135,9 @@ def _postprocess_wav_for_playback(
         fade_frames = int(params.framerate * fade_out_ms / 1000)
         frames = fade_edges_pcm16(frames, params.nchannels, fade_in_frames, fade_frames)
 
-    n_silence = int(params.framerate * silence_padding_ms / 1000) * params.nchannels * params.sampwidth
+    n_silence = (
+        int(params.framerate * silence_padding_ms / 1000) * params.nchannels * params.sampwidth
+    )
     with wave.open(str(dst), "wb") as w:
         w.setparams(params)
         w.writeframes(frames)
@@ -290,6 +292,7 @@ class PiperTTSBackend(_TTSBackend):
 # Phrase library: instant pre-recorded playback
 # ---------------------------------------------------------------------------
 
+
 class PhraseLibrary:
     """Maps normalised phrase text to pre-generated WAV files.
 
@@ -369,5 +372,3 @@ class PhraseLibrary:
             pass
         fallback = aplay_default_command(self._aplay, str(wav_path))
         subprocess.run(fallback, check=True, timeout=APLAY_TIMEOUT_S)
-
-

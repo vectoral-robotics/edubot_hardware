@@ -1,15 +1,16 @@
 """Unit tests for the pure TTS helpers and backends (no ROS, no audio)."""
 
+import unittest.mock
 from array import array
 
 import pytest
 
 from edubot_hardware.speaker_interface import (
-    aplay_default_command,
     NullTTSBackend,
     PiperTTSBackend,
     TTSUnavailable,
     aplay_command,
+    aplay_default_command,
     clamp_volume,
     fade_edges_pcm16,
     piper_command,
@@ -104,10 +105,12 @@ def test_piper_backend_requires_voice_model(tmp_path):
 def test_piper_backend_requires_binaries(tmp_path):
     model = tmp_path / "voice.onnx"
     model.write_bytes(b"\x00")  # presence is all the constructor checks
-    with pytest.raises(TTSUnavailable, match="piper"):
-        PiperTTSBackend(str(model), "dev", piper_bin=None, aplay_bin="/usr/bin/aplay")
-    with pytest.raises(TTSUnavailable, match="aplay"):
-        PiperTTSBackend(str(model), "dev", piper_bin="/usr/bin/piper", aplay_bin=None)
+    # Patch shutil.which so the fallback never finds a system-installed binary.
+    with unittest.mock.patch("shutil.which", return_value=None):
+        with pytest.raises(TTSUnavailable, match="piper"):
+            PiperTTSBackend(str(model), "dev", piper_bin=None, aplay_bin="/usr/bin/aplay")
+        with pytest.raises(TTSUnavailable, match="aplay"):
+            PiperTTSBackend(str(model), "dev", piper_bin="/usr/bin/piper", aplay_bin=None)
 
 
 def test_piper_backend_constructs_when_everything_present(tmp_path):
