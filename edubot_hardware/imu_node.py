@@ -29,7 +29,7 @@ Parameters (all optional):
   ~i2c_address     int   0x4A  I2C address (0x4A or 0x4B)
   ~frame_id        str   imu_link   frame_id in the published header
   ~publish_hz      float  100.0  target publish rate [Hz]
-  ~use_sim         bool  false  if true → publish zeroed messages (no hardware)
+  ~use_sim         bool  false  if true → disable hardware IMU publishing
 """
 
 import rclpy
@@ -79,7 +79,9 @@ class ImuNode(Node):
         # ------------------------------------------------------------------
         self._bno = None
         if use_sim:
-            self.get_logger().info("IMU Node: simulation mode — publishing zeroed messages.")
+            self.get_logger().info(
+                "IMU Node: simulation mode - no hardware IMU measurements will be published."
+            )
         else:
             self._bno = self._init_bno()
 
@@ -99,7 +101,7 @@ class ImuNode(Node):
         self.create_timer(1.0 / publish_hz, self._timer_cb)
 
         self.get_logger().info(
-            f"IMU Node ready: publishing on imu/data @ {publish_hz:.0f} Hz "
+            f"IMU Node configured: target on imu/data @ {publish_hz:.0f} Hz "
             f"(frame_id={self._frame_id}, addr=0x{self._i2c_address:02X})"
         )
 
@@ -145,6 +147,11 @@ class ImuNode(Node):
             return None
 
     def _timer_cb(self):
+        # Missing hardware is not a measurement of zero motion. Publishing a
+        # precise identity orientation/zero gyro here pins the EKF heading even
+        # while wheel odometry says the robot is turning.
+        if self._bno is None:
+            return
         msg = Imu()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._frame_id
@@ -153,12 +160,6 @@ class ImuNode(Node):
         msg.orientation_covariance = _diag_cov(_ORIENT_COV_DIAG)
         msg.angular_velocity_covariance = _diag_cov(_GYRO_COV_DIAG)
         msg.linear_acceleration_covariance = _diag_cov(_ACCEL_COV_DIAG)
-
-        if self._bno is None:
-            # Simulation / hardware unavailable: publish identity quaternion.
-            msg.orientation.w = 1.0
-            self._pub.publish(msg)
-            return
 
         try:
             quat = self._bno.quaternion  # (i, j, k, real) — note order!
